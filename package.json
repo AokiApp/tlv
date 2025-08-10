@@ -33,7 +33,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "changelog": "changeset",
+    "version": "changeset version",
+    "publish": "changeset publish"
   },
   "keywords": [
     "tlv",
