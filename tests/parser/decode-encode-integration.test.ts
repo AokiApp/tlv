@@ -9,7 +9,7 @@ import {
   BasicTLVBuilder,
   SchemaBuilder,
   Schema as BuilderSchema,
-} from "@aokiapp/tlv-builder";
+} from "@aokiapp/tlv/builder";
 import {
   TestData,
   Decoders,

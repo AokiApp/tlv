@@ -238,7 +238,7 @@ export class SchemaParser<S extends TLVSchema> {
         if (
           decoded instanceof Promise ||
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-          (decoded as any).then instanceof Function
+          (decoded as any)?.then instanceof Function
         ) {
           throw new Error(
             `Asynchronous decoder used in synchronous parse for field: ${schema.name}`,

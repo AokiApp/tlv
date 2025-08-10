@@ -9,13 +9,8 @@ import {
   BasicTLVBuilder,
   SchemaBuilder,
   Schema as BuilderSchema,
-} from "@aokiapp/tlv-builder";
-import {
-  schemaKenhojoBasicFour,
-  schemaKenhojoSignature,
-  schemaKenkakuEntries,
-  schemaKenkakuMyNumber,
-} from "@aokiapp/mynacard";
+} from "@aokiapp/tlv/builder";
+import { schemaKenhojoBasicFour, schemaKenhojoSignature } from "../schema";
 import { TestData, Decoders, SampleTlvData } from "./test-helpers";
 
 /**

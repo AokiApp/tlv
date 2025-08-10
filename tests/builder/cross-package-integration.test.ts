@@ -9,13 +9,13 @@ import {
   BasicTLVParser,
   SchemaParser,
   Schema as ParserSchema,
-} from "@aokiapp/tlv-parser";
+} from "@aokiapp/tlv/parser";
 import {
   schemaKenhojoBasicFour,
   schemaKenhojoSignature,
   schemaKenkakuEntries,
   schemaKenkakuMyNumber,
-} from "@aokiapp/mynacard";
+} from "../schema";
 import { TestData, Encoders } from "./test-helpers";
 
 /**
@@ -299,7 +299,7 @@ describe("Cross-Package Integration Tests - Full Interoperability", () => {
       ]);
     });
 
-    test("should handle MynaCard KenkakuEntries with binary data", () => {
+    test("should handle MynaCard KenkakuEntries with binary data", async () => {
       // Given: Create properly encoded ArrayBuffer data with binary content
       const pngHeader = new Uint8Array([
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -348,7 +348,7 @@ describe("Cross-Package Integration Tests - Full Interoperability", () => {
       // When: Build and parse using production schema
       const encoded = builder.build(testData);
       const parser = new SchemaParser(schemaKenkakuEntries);
-      const parsed = parser.parse(encoded);
+      const parsed = await parser.parse(encoded, { async: true });
 
       // Then: Should maintain data integrity including binary data
       expect(parsed.offsets).toEqual([100, 200]);
@@ -357,7 +357,7 @@ describe("Cross-Package Integration Tests - Full Interoperability", () => {
       expect(parsed.publicKey).toBeDefined();
       expect(Array.from(parsed.namePng.slice(0, 4))).toEqual([
         0x89, 0x50, 0x4e, 0x47,
-      ]); // PNG signature
+      ]);
       expect(Array.from(parsed.faceJp2.slice(4, 8))).toEqual([
         0x6a, 0x50, 0x20, 0x20,
       ]); // JP2 signature

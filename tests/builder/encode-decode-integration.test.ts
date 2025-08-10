@@ -9,7 +9,7 @@ import {
   BasicTLVParser,
   SchemaParser,
   Schema as ParserSchema,
-} from "@aokiapp/tlv-parser";
+} from "@aokiapp/tlv/parser";
 import { TestData, Encoders, CommonTags } from "./test-helpers";
 
 describe("TLV Builder -> Parser Integration - Encode then Decode", () => {

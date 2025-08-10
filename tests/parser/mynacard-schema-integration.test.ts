@@ -4,7 +4,7 @@ import {
   Schema as ParserSchema,
   TagClass,
 } from "../../src/parser";
-import { SchemaBuilder, Schema as BuilderSchema } from "@aokiapp/tlv-builder";
+import { SchemaBuilder, Schema as BuilderSchema } from "@aokiapp/tlv/builder";
 import { TestData, Decoders } from "./test-helpers";
 
 /**

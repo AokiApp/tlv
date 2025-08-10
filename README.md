@@ -20,10 +20,10 @@ High-performance TypeScript library for Tag-Length-Value (TLV) parsing and build
 
 ## Features
 
-- ⚡️ Fast, zero-dependency TLV parser and builder  
-- 📐 Schema-driven API with sync/async support  
-- 🔒 Full TypeScript type safety and inference  
-- 🧩 Modular design: separate parser, builder, and common types  
+- ⚡️ Fast, zero-dependency TLV parser and builder
+- 📐 Schema-driven API with sync/async support
+- 🔒 Full TypeScript type safety and inference
+- 🧩 Modular design: separate parser, builder, and common types
 
 ## Getting Started
 
@@ -40,7 +40,7 @@ npm install @aokiapp/tlv
 ```typescript
 import { BasicTLVParser } from "@aokiapp/tlv/parser";
 
-const buffer = new Uint8Array([0x04, 0x05, /*...*/]).buffer;
+const buffer = new Uint8Array([0x04, 0x05 /*...*/]).buffer;
 const result = BasicTLVParser.parse(buffer);
 console.log(result);
 ```
@@ -65,18 +65,18 @@ console.log(parsed);
 
 ### Parser (`@aokiapp/tlv/parser`)
 
-- **BasicTLVParser**: `parse(buffer: ArrayBuffer): TLVResult` — Parse raw TLV.  
-- **SchemaParser\<S>**: `parse(buffer, options?): ParsedResult<S> | Promise<ParsedResult<S>>` — Schema-based parsing.  
+- **BasicTLVParser**: `parse(buffer: ArrayBuffer): TLVResult` — Parse raw TLV.
+- **SchemaParser\<S>**: `parse(buffer, options?): ParsedResult<S> | Promise<ParsedResult<S>>` — Schema-based parsing.
 
 ### Builder (`@aokiapp/tlv/builder`)
 
-- **BasicTLVBuilder**: `build(tlv: TLVResult): ArrayBuffer` — DER encode TLV result.  
-- **SchemaBuilder\<S>**: `build(data, options?): ArrayBuffer | Promise<ArrayBuffer>` — Schema-based building.  
+- **BasicTLVBuilder**: `build(tlv: TLVResult): ArrayBuffer` — DER encode TLV result.
+- **SchemaBuilder\<S>**: `build(data, options?): ArrayBuffer | Promise<ArrayBuffer>` — Schema-based building.
 
 ### Common Types (`@aokiapp/tlv/common`)
 
-- `TagClass` — Enum for Universal, Application, ContextSpecific, Private.  
-- `TLVResult`, `TagInfo` — Interfaces for parsed TLV data.  
+- `TagClass` — Enum for Universal, Application, ContextSpecific, Private.
+- `TLVResult`, `TagInfo` — Interfaces for parsed TLV data.
 
 ## API Reference
 
@@ -87,7 +87,7 @@ console.log(parsed);
 [`BasicTLVParser.parse(buffer: ArrayBuffer): TLVResult`](tlv/src/parser/basic-parser.ts:9)  
 Parse a single TLV structure.
 
-- buffer: ArrayBuffer containing TLV data.  
+- buffer: ArrayBuffer containing TLV data.
 - Returns: TLVResult.
 
 #### SchemaParser\<S>
@@ -95,9 +95,9 @@ Parse a single TLV structure.
 [`SchemaParser.parse(buffer: ArrayBuffer, options?: { async?: boolean; strict?: boolean }): ParsedResult<S> | Promise<ParsedResult<S>>`](tlv/src/parser/schema-parser.ts:109)  
 Parse TLV data based on a schema.
 
-- buffer: ArrayBuffer input.  
-- options.async: true for asynchronous parsing.  
-- options.strict: override strict DER mode.  
+- buffer: ArrayBuffer input.
+- options.async: true for asynchronous parsing.
+- options.strict: override strict DER mode.
 - Returns: Parsed result matching schema, synchronously or as a Promise.
 
 ### Builder
@@ -117,6 +117,7 @@ Build TLV data based on a schema.
 [`TagClass`](tlv/src/common/types.ts:1) — Enum of TLV tag classes.  
 [`TagInfo`](tlv/src/common/types.ts:9) — Interface for TLV tag metadata.  
 [`TLVResult`](tlv/src/common/types.ts:15) — Interface for parsed TLV results.
+
 ## Examples
 
 ### Parsing Primitive TLV
@@ -166,7 +167,7 @@ const tlv = {
   tag: { tagClass: TagClass.Universal, tagNumber: 0x04, constructed: false },
   length: 3,
   value: new TextEncoder().encode("Hi!").buffer,
-  endOffset: 0
+  endOffset: 0,
 };
 const encoded = BasicTLVBuilder.build(tlv);
 console.log(new Uint8Array(encoded)); // [0x04, 0x03, 0x48, 0x69, 0x21]
@@ -183,9 +184,13 @@ const schema = {
   tagClass: TagClass.Universal,
   tagNumber: 0x10, // Sequence
   fields: [
-    { name: "age", tagNumber: 0x02, encode: n => new Uint8Array([n]).buffer },
-    { name: "name", tagNumber: 0x0c, encode: s => new TextEncoder().encode(s).buffer }
-  ]
+    { name: "age", tagNumber: 0x02, encode: (n) => new Uint8Array([n]).buffer },
+    {
+      name: "name",
+      tagNumber: 0x0c,
+      encode: (s) => new TextEncoder().encode(s).buffer,
+    },
+  ],
 };
 const builder = new SchemaBuilder(schema);
 const built = builder.build({ age: 30, name: "Alice" });
