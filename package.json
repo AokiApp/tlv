@@ -1,6 +1,6 @@
 {
   "name": "@aokiapp/tlv",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tag-Length-Value (TLV) parser and builder library with schema support. Provides both parsing and building APIs as submodules.",
   "type": "module",
   "main": "./dist/index.js",
