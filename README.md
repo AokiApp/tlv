@@ -67,7 +67,7 @@ console.log(parsed);
 ### Parser (`@aokiapp/tlv/parser`)
 
 - **BasicTLVParser**: `parse(buffer: ArrayBuffer): TLVResult` — Parse raw TLV.
-- **SchemaParser\<S>**: 
+- **SchemaParser\<S>**:
   - `parse(buffer: ArrayBuffer, options?: { async?: boolean; strict?: boolean }): ParsedResult<S> | Promise<ParsedResult<S>>`
   - `parseSync(buffer: ArrayBuffer): ParsedResult<S>`
   - `parseAsync(buffer: ArrayBuffer): Promise<ParsedResult<S>>`
@@ -76,7 +76,7 @@ console.log(parsed);
 ### Builder (`@aokiapp/tlv/builder`)
 
 - **BasicTLVBuilder**: `build(tlv: TLVResult): ArrayBuffer` — DER encode TLV result.
-- **SchemaBuilder\<S>**: 
+- **SchemaBuilder\<S>**:
   - `build(data: BuildData<S>, options?: { async?: boolean; strict?: boolean }): ArrayBuffer | Promise<ArrayBuffer>`
   - Synchronous and asynchronous variants.
 - **Schema**: Static helpers for schema construction.
@@ -198,16 +198,20 @@ console.log(new Uint8Array(encoded)); // [0x04, 0x03, 0x48, 0x69, 0x21]
 import { SchemaBuilder, Schema } from "@aokiapp/tlv/builder";
 import { TagClass } from "@aokiapp/tlv/common";
 
-const personSchema = Schema.constructed("person", [
-  Schema.primitive("age", {
-    tagNumber: 0x02,
-    encode: (n: number) => new Uint8Array([n]).buffer,
-  }),
-  Schema.primitive("name", {
-    tagNumber: 0x0c,
-    encode: (s: string) => new TextEncoder().encode(s).buffer,
-  }),
-], { tagClass: TagClass.Universal, tagNumber: 0x10 });
+const personSchema = Schema.constructed(
+  "person",
+  [
+    Schema.primitive("age", {
+      tagNumber: 0x02,
+      encode: (n: number) => new Uint8Array([n]).buffer,
+    }),
+    Schema.primitive("name", {
+      tagNumber: 0x0c,
+      encode: (s: string) => new TextEncoder().encode(s).buffer,
+    }),
+  ],
+  { tagClass: TagClass.Universal, tagNumber: 0x10 },
+);
 
 const builder = new SchemaBuilder(personSchema);
 const built = builder.build({ age: 30, name: "Alice" }); // Synchronous

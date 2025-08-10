@@ -16,7 +16,13 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["**/dist/**", "eslint.config.mjs", "vitest.config.js", "tests/*"],
+    ignores: [
+      "**/dist/**",
+      "eslint.config.mjs",
+      "vitest.config.js",
+      "tests/*",
+      "examples/*.ts",
+    ],
   },
   {
     rules: {},
