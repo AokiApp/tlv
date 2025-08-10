@@ -217,4 +217,4 @@ console.log(new Uint8Array(built)); // TLV-encoded person structure
 
 ## License
 
-Specify your license here. (No LICENSE.md found in this repo.)
+See [`LICENSE.md`](LICENSE.md) for the full license text and terms.
