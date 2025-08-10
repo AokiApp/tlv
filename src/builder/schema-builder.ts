@@ -34,8 +34,8 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 }
 
 type TLVSchema =
-  | PrimitiveTLVSchema<unknown>
-  | ConstructedTLVSchema<readonly TLVSchema[]>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  PrimitiveTLVSchema<any> | ConstructedTLVSchema<readonly TLVSchema[]>;
 
 export type BuildData<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
