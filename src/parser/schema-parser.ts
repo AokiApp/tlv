@@ -1,4 +1,5 @@
 import { BasicTLVParser } from "./basic-parser.js";
+import { BasicTLVBuilder } from "../builder/basic-builder.js";
 import { TagClass, TagInfo } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
@@ -33,9 +34,16 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
   readonly fields: F;
 }
 
+interface RepeatedTLVSchema extends TLVSchemaBase {
+  readonly item: TLVSchema;
+  readonly kind: "sequenceOf" | "setOf";
+  readonly optional?: boolean;
+}
+
 type TLVSchema =
   | PrimitiveTLVSchema<unknown>
-  | ConstructedTLVSchema<readonly TLVSchema[]>;
+  | ConstructedTLVSchema<readonly TLVSchema[]>
+  | RepeatedTLVSchema;
 
 type ParsedResult<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
@@ -44,7 +52,9 @@ type ParsedResult<S extends TLVSchema> =
       }
     : S extends PrimitiveTLVSchema<infer DecodedType>
       ? DecodedType
-      : never;
+      : S extends RepeatedTLVSchema
+        ? Array<ParsedResult<S["item"]>>
+        : never;
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -61,7 +71,18 @@ function isConstructedSchema(
     )
   );
 }
+function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
+  return (
+    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
+    (schema as RepeatedTLVSchema).kind === "setOf"
+  );
+}
 
+function isPrimitiveSchema(
+  schema: TLVSchema,
+): schema is PrimitiveTLVSchema<unknown> {
+  return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
+}
 /**
  * A parser that parses TLV data based on a given schema (synchronous or asynchronous).
  * @template S - The schema type.
@@ -161,6 +182,53 @@ export class SchemaParser<S extends TLVSchema> {
 
     this.validateTagInfo(tag, schema);
 
+    if (isRepeatedSchema(schema)) {
+      let subOffset = 0;
+      const results = [] as Array<ParsedResult<typeof schema.item>>;
+      const encodedChildren: Uint8Array[] = [];
+      while (subOffset < value.byteLength) {
+        const childTLV = BasicTLVParser.parse(value.slice(subOffset));
+        encodedChildren.push(new Uint8Array(BasicTLVBuilder.build(childTLV)));
+
+        const childParser = new SchemaParser(schema.item, {
+          strict: this.strict,
+        });
+        const parsedChild = childParser.parse(value.slice(subOffset));
+        results.push(parsedChild);
+
+        subOffset += childTLV.endOffset;
+      }
+
+      if (subOffset !== value.byteLength) {
+        throw new Error(
+          "Constructed element does not end exactly at the expected length.",
+        );
+      }
+
+      if (schema.kind === "setOf" && this.strict) {
+        for (let i = 1; i < encodedChildren.length; i++) {
+          const a = encodedChildren[i - 1];
+          const b = encodedChildren[i];
+          const len = Math.min(a.length, b.length);
+          let cmp = 0;
+          for (let j = 0; j < len; j++) {
+            if (a[j] !== b[j]) {
+              cmp = a[j] < b[j] ? -1 : 1;
+              break;
+            }
+          }
+          if (cmp === 0) {
+            cmp = a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
+          }
+          if (cmp > 0) {
+            throw new Error("SET elements are not in DER lexicographic order.");
+          }
+        }
+      }
+
+      return results as ParsedResult<T>;
+    }
+
     if (isConstructedSchema(schema)) {
       let subOffset = 0;
       let fieldsToProcess = [...schema.fields];
@@ -232,7 +300,7 @@ export class SchemaParser<S extends TLVSchema> {
       }
 
       return result as ParsedResult<T>;
-    } else {
+    } else if (isPrimitiveSchema(schema)) {
       if (schema.decode) {
         const decoded = schema.decode(value);
         if (
@@ -247,6 +315,8 @@ export class SchemaParser<S extends TLVSchema> {
         return decoded as ParsedResult<T>;
       }
       return value as ParsedResult<T>;
+    } else {
+      throw new Error("Unsupported TLV schema kind for parseSync");
     }
   }
 
@@ -263,6 +333,28 @@ export class SchemaParser<S extends TLVSchema> {
     this.offset += endOffset;
 
     this.validateTagInfo(tag, schema);
+
+    if (isRepeatedSchema(schema)) {
+      let subOffset = 0;
+      const results = [] as Array<ParsedResult<typeof schema.item>>;
+      while (subOffset < value.byteLength) {
+        const childTLV = BasicTLVParser.parse(value.slice(subOffset));
+        const fieldParser = new SchemaParser(schema.item);
+        const parsedField = await fieldParser.parseAsync(
+          value.slice(subOffset),
+        );
+        results.push(parsedField);
+        subOffset += childTLV.endOffset;
+      }
+
+      if (subOffset !== value.byteLength) {
+        throw new Error(
+          "Constructed element does not end exactly at the expected length.",
+        );
+      }
+
+      return results as ParsedResult<T>;
+    }
 
     if (isConstructedSchema(schema)) {
       let subOffset = 0;
@@ -286,13 +378,15 @@ export class SchemaParser<S extends TLVSchema> {
       }
 
       return result as ParsedResult<T>;
-    } else {
+    } else if (isPrimitiveSchema(schema)) {
       if (schema.decode) {
         // decode might return a Promise, so it is awaited
         const decoded = schema.decode(value);
         return (await Promise.resolve(decoded)) as ParsedResult<T>;
       }
       return value as ParsedResult<T>;
+    } else {
+      throw new Error("Unsupported TLV schema kind for parseAsync");
     }
   }
 
@@ -308,7 +402,8 @@ export class SchemaParser<S extends TLVSchema> {
         `Tag class mismatch: expected ${schema.tagClass}, but got ${tagInfo.tagClass}`,
       );
     }
-    const expectedConstructed = isConstructedSchema(schema);
+    const expectedConstructed =
+      isConstructedSchema(schema) || isRepeatedSchema(schema);
     if (expectedConstructed !== tagInfo.constructed) {
       throw new Error(
         `Tag constructed flag mismatch: expected ${expectedConstructed}, but got ${tagInfo.constructed}`,
@@ -374,6 +469,52 @@ export class Schema {
       fields,
       tagClass,
       tagNumber,
+    };
+  }
+
+  /**
+   * Creates a SEQUENCE OF TLV parser schema.
+   */
+  public static sequenceOf<N extends string>(
+    name: N,
+    item: TLVSchema,
+    options?: {
+      tagClass?: TagClass;
+      tagNumber?: number;
+      optional?: boolean;
+    },
+  ): RepeatedTLVSchema & { name: N } {
+    const { tagClass, tagNumber, optional } = options ?? {};
+    return {
+      name,
+      item,
+      kind: "sequenceOf",
+      tagClass,
+      tagNumber,
+      optional,
+    };
+  }
+
+  /**
+   * Creates a SET OF TLV parser schema.
+   */
+  public static setOf<N extends string>(
+    name: N,
+    item: TLVSchema,
+    options?: {
+      tagClass?: TagClass;
+      tagNumber?: number;
+      optional?: boolean;
+    },
+  ): RepeatedTLVSchema & { name: N } {
+    const { tagClass, tagNumber, optional } = options ?? {};
+    return {
+      name,
+      item,
+      kind: "setOf",
+      tagClass,
+      tagNumber,
+      optional,
     };
   }
 }
