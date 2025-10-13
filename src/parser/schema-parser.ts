@@ -33,9 +33,20 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
   readonly fields: F;
 }
 
+/**
+ * Interface for defining a repeated (SEQUENCE OF / SET OF) TLV schema container.
+ */
+export interface RepeatedTLVSchema extends TLVSchemaBase {
+  /**
+   * Element schema contained in the OF container.
+   */
+  readonly of: TLVSchema;
+}
+
 type TLVSchema =
   | PrimitiveTLVSchema<unknown>
-  | ConstructedTLVSchema<readonly TLVSchema[]>;
+  | ConstructedTLVSchema<readonly TLVSchema[]>
+  | RepeatedTLVSchema;
 
 type ParsedResult<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
@@ -44,7 +55,9 @@ type ParsedResult<S extends TLVSchema> =
       }
     : S extends PrimitiveTLVSchema<infer DecodedType>
       ? DecodedType
-      : never;
+      : S extends RepeatedTLVSchema
+        ? ParsedResult<S["of"]>[]
+        : never;
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -60,6 +73,13 @@ function isConstructedSchema(
       (schema as unknown as ConstructedTLVSchema<readonly TLVSchema[]>).fields,
     )
   );
+}
+
+/**
+ * Checks if a given schema is a repeated (SEQUENCE OF / SET OF) container.
+ */
+function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
+  return (schema as RepeatedTLVSchema).of !== undefined;
 }
 
 /**
@@ -232,6 +252,25 @@ export class SchemaParser<S extends TLVSchema> {
       }
 
       return result as ParsedResult<T>;
+    } else if (isRepeatedSchema(schema)) {
+      // Parse SEQUENCE OF / SET OF container: repeatedly parse elements until end
+      let subOffset = 0;
+      const results: ParsedResult<T> = [] as unknown as ParsedResult<T>;
+
+      while (subOffset < value.byteLength) {
+        const elemParser = new SchemaParser(schema.of, { strict: this.strict });
+        const parsedElem = elemParser.parse(value.slice(subOffset));
+        (results as unknown as unknown[]).push(parsedElem as never);
+        subOffset += elemParser.offset;
+      }
+
+      if (subOffset !== value.byteLength) {
+        throw new Error(
+          "Repeated container does not end exactly at the expected length.",
+        );
+      }
+
+      return results;
     } else {
       if (schema.decode) {
         const decoded = schema.decode(value);
@@ -286,6 +325,25 @@ export class SchemaParser<S extends TLVSchema> {
       }
 
       return result as ParsedResult<T>;
+    } else if (isRepeatedSchema(schema)) {
+      // Parse SEQUENCE OF / SET OF container asynchronously
+      let subOffset = 0;
+      const results: ParsedResult<T> = [] as unknown as ParsedResult<T>;
+
+      while (subOffset < value.byteLength) {
+        const elemParser = new SchemaParser(schema.of);
+        const parsedElem = await elemParser.parseAsync(value.slice(subOffset));
+        (results as unknown as unknown[]).push(parsedElem as never);
+        subOffset += elemParser.offset;
+      }
+
+      if (subOffset !== value.byteLength) {
+        throw new Error(
+          "Repeated container does not end exactly at the expected length.",
+        );
+      }
+
+      return results;
     } else {
       if (schema.decode) {
         // decode might return a Promise, so it is awaited
@@ -308,7 +366,8 @@ export class SchemaParser<S extends TLVSchema> {
         `Tag class mismatch: expected ${schema.tagClass}, but got ${tagInfo.tagClass}`,
       );
     }
-    const expectedConstructed = isConstructedSchema(schema);
+    const expectedConstructed =
+      isConstructedSchema(schema) || isRepeatedSchema(schema);
     if (expectedConstructed !== tagInfo.constructed) {
       throw new Error(
         `Tag constructed flag mismatch: expected ${expectedConstructed}, but got ${tagInfo.constructed}`,
@@ -374,6 +433,52 @@ export class Schema {
       fields,
       tagClass,
       tagNumber,
+    };
+  }
+
+  /**
+   * Creates a SEQUENCE OF container schema definition.
+   * @param name - The name of the field.
+   * @param of - Element schema to repeat.
+   * @param options - Optional tag class and tag number (default SEQUENCE: Universal 16).
+   */
+  public static sequenceOf<N extends string>(
+    name: N,
+    of: TLVSchema,
+    options?: {
+      tagClass?: TagClass;
+      tagNumber?: number;
+    },
+  ): RepeatedTLVSchema & { name: N } {
+    const { tagClass, tagNumber } = options ?? {};
+    return {
+      name,
+      of,
+      tagClass,
+      tagNumber: tagNumber ?? 16,
+    };
+  }
+
+  /**
+   * Creates a SET OF container schema definition.
+   * @param name - The name of the field.
+   * @param of - Element schema to repeat.
+   * @param options - Optional tag class and tag number (default SET: Universal 17).
+   */
+  public static setOf<N extends string>(
+    name: N,
+    of: TLVSchema,
+    options?: {
+      tagClass?: TagClass;
+      tagNumber?: number;
+    },
+  ): RepeatedTLVSchema & { name: N } {
+    const { tagClass, tagNumber } = options ?? {};
+    return {
+      name,
+      of,
+      tagClass,
+      tagNumber: tagNumber ?? 17,
     };
   }
 }
