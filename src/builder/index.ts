@@ -1,3 +1,3 @@
-export * from "./basic-builder.js";
-export * from "./schema-builder.js";
-export * from "../common/types.js";
+export * from "./basic-builder";
+export * from "./schema-builder";
+export * from "../common/types";

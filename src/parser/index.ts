@@ -1,3 +1,3 @@
-export * from "./basic-parser.js";
-export * from "./schema-parser.js";
-export * from "../common/types.js";
+export * from "./basic-parser";
+export * from "./schema-parser";
+export * from "../common/types";

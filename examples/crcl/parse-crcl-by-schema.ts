@@ -188,14 +188,9 @@ const AttributeTypeAndValue = Schema.constructed(
   { tagNumber: 16 }, // SEQUENCE
 );
 
-const RelativeDistinguishedName = Schema.constructed(
-  "rdn",
-  [AttributeTypeAndValue],
-  { tagNumber: 17 }, // SET
-);
+const RelativeDistinguishedName = Schema.setOf("rdn", AttributeTypeAndValue);
 
-const RDNSequence = Schema.setOf("rdn", AttributeTypeAndValue);
-const NameSequence = Schema.sequenceOf("name", RDNSequence);
+const NameSequence = Schema.sequenceOf("name", RelativeDistinguishedName);
 
 // GeneralName [4] containing Name (could be empty in header)
 const GeneralNameEmpty = Schema.constructed(
