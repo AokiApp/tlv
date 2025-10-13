@@ -87,7 +87,8 @@ function isPrimitiveSchema(
 function encodeTag(field: TLVSchema): Uint8Array {
   const tagClass = field.tagClass ?? TagClass.Universal;
   const tagNumber = field.tagNumber ?? 0;
-  const constructed = isConstructedSchema(field) ? 0x20 : 0x00;
+  const constructed =
+    isConstructedSchema(field) || isRepeatedSchema(field) ? 0x20 : 0x00;
   const bytes: number[] = [];
   let firstByte = (tagClass << 6) | constructed;
   if (tagNumber < 31) {
