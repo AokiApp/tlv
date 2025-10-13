@@ -18,81 +18,32 @@ import { fileURLToPath } from "node:url";
 
 // Use source modules directly for tsx runtime
 import { SchemaParser, Schema, TagClass } from "../../src/parser/index.ts";
+import {
+  bufferToArrayBuffer,
+  toHex,
+  decodeUtf8,
+  decodeShiftJis,
+  decodeAscii,
+  decodeInteger,
+  decodeOID,
+  decodeBitStringHex,
+} from "../../src/utils/codecs.ts";
 
 /**
  * Utility: convert Node.js Buffer to ArrayBuffer without extra copy
  */
-function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
-  // Ensure a true ArrayBuffer (and avoid SharedArrayBuffer union types)
-  const out = new ArrayBuffer(buf.byteLength);
-  new Uint8Array(out).set(
-    new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
-  );
-  return out;
-}
 
 /**
  * Utility: convert ArrayBuffer or Uint8Array to hex string
  */
-function toHex(input: ArrayBuffer | Uint8Array): string {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 /**
  * Decoders
  */
-const decodeUtf8 = (buffer: ArrayBuffer): string =>
-  new TextDecoder("utf-8").decode(buffer);
-
-const decodeShiftJis = (buffer: ArrayBuffer): string =>
-  new TextDecoder("shift_jis").decode(buffer);
-
-const decodeAscii = (buffer: ArrayBuffer): string =>
-  new TextDecoder("ascii").decode(buffer);
-
-const decodeInteger = (buffer: ArrayBuffer): number => {
-  // Unsigned big-endian integer (sufficient for small values used here)
-  const view = new DataView(buffer);
-  let result = 0;
-  for (let i = 0; i < buffer.byteLength; i++) {
-    result = (result << 8) | view.getUint8(i);
-  }
-  return result;
-};
-
-const decodeOID = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length === 0) return "";
-  const first = bytes[0];
-  const firstX = Math.floor(first / 40);
-  const firstY = first % 40;
-  const parts: string[] = [String(firstX), String(firstY)];
-  let value = 0;
-  for (let i = 1; i < bytes.length; i++) {
-    const b = bytes[i];
-    value = (value << 7) | (b & 0x7f);
-    if ((b & 0x80) === 0) {
-      parts.push(String(value));
-      value = 0;
-    }
-  }
-  return parts.join(".");
-};
 
 /**
  * BIT STRING decoder: return hex of content (skipping the first unused-bits byte)
  */
-const decodeBitStringHex = (
-  buffer: ArrayBuffer,
-): { unusedBits: number; hex: string } => {
-  const bytes = new Uint8Array(buffer);
-  const unusedBits = bytes.length > 0 ? bytes[0] : 0;
-  const content = bytes.length > 0 ? bytes.slice(1) : new Uint8Array();
-  return { unusedBits, hex: toHex(content) };
-};
 
 /**
  * Nested parse: RegisteredCorporationInfoSyntax inside extnValue (OCTET STRING)

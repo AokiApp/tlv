@@ -20,14 +20,7 @@ import {
   TagClass,
 } from "../../src/parser/index.ts";
 import { SchemaBuilder, Schema as BSchema } from "../../src/builder/index.ts";
-
-function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
-  const out = new ArrayBuffer(buf.byteLength);
-  new Uint8Array(out).set(
-    new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
-  );
-  return out;
-}
+import { bufferToArrayBuffer } from "../../src/utils/codecs.ts";
 
 // -----------------------------
 // Raw Parser Schemas (no decoders)

@@ -1,5 +1,10 @@
 import { expect } from "vitest";
 import { TagClass } from "../../src/builder";
+import {
+  encodeUtf8,
+  encodeInteger,
+  encodeBitString,
+} from "../../src/utils/codecs";
 
 /**
  * Test data factory for creating various buffer types
@@ -86,7 +91,7 @@ export const TestData = {
  */
 export const Encoders = {
   utf8String: (str: string): ArrayBuffer => {
-    return TestData.createStringBuffer(str);
+    return encodeUtf8(str);
   },
   /**
    * Alias for utf8String to keep test code readable
@@ -94,30 +99,8 @@ export const Encoders = {
   string: (str: string): ArrayBuffer => {
     return Encoders.utf8String(str);
   },
-
   integer: (num: number): ArrayBuffer => {
-    if (num === 0) {
-      return new ArrayBuffer(1); // INTEGER 0 is encoded as single 0x00 byte
-    }
-
-    // Calculate minimum bytes needed
-    let tempNum = Math.abs(num);
-    let byteCount = 0;
-    while (tempNum > 0) {
-      tempNum >>= 8;
-      byteCount++;
-    }
-
-    const buffer = new ArrayBuffer(byteCount);
-    const view = new DataView(buffer);
-
-    // Store in big-endian format
-    for (let i = byteCount - 1; i >= 0; i--) {
-      view.setUint8(i, num & 0xff);
-      num >>= 8;
-    }
-
-    return buffer;
+    return encodeInteger(num);
   },
   /**
    * Alias for integer encoder to accept generic number naming
@@ -125,31 +108,23 @@ export const Encoders = {
   number: (num: number): ArrayBuffer => {
     return Encoders.integer(num);
   },
-
   singleByte: (byte: number): ArrayBuffer => {
     const buffer = new ArrayBuffer(1);
     new Uint8Array(buffer)[0] = byte;
     return buffer;
   },
-
   boolean: (value: boolean): ArrayBuffer => {
     const buffer = new ArrayBuffer(1);
     new Uint8Array(buffer)[0] = value ? 0xff : 0x00;
     return buffer;
   },
-
   asyncString: async (str: string): Promise<ArrayBuffer> => {
     // Simulate async operation
     await new Promise((resolve) => setTimeout(resolve, 1));
-    return Encoders.utf8String(str);
+    return encodeUtf8(str);
   },
-
   bitString: (bits: { unusedBits: number; data: Uint8Array }): ArrayBuffer => {
-    const buffer = new ArrayBuffer(bits.data.length + 1);
-    const view = new Uint8Array(buffer);
-    view[0] = bits.unusedBits;
-    view.set(bits.data, 1);
-    return buffer;
+    return encodeBitString(bits);
   },
 };
 

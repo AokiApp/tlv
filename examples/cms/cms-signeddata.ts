@@ -28,101 +28,17 @@ import {
   TagClass,
 } from "../../src/builder";
 import { Schema as ParserSchema, SchemaParser } from "../../src/parser";
+import {
+  encodeOID,
+  decodeOID,
+  encodeInteger,
+  decodeInteger,
+  toArrayBuffer,
+} from "../../src/utils/codecs";
 
 // OID helpers (DER)
-type OIDString = string;
-
-function encodeOID(oid: OIDString): ArrayBuffer {
-  const arcs = oid.split(".").map((s) => {
-    const n = Number(s);
-    if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid OID arc: ${s}`);
-    return Math.floor(n);
-  });
-  if (arcs.length < 2) throw new Error("OID must have at least two arcs");
-  const first = arcs[0];
-  const second = arcs[1];
-  let firstByte = 0;
-  if (first < 2) {
-    firstByte = first * 40 + second;
-  } else {
-    firstByte = 80 + second;
-  }
-  const out: number[] = [firstByte];
-  for (let i = 2; i < arcs.length; i++) {
-    out.push(...encodeBase128(arcs[i]));
-  }
-  return new Uint8Array(out).buffer;
-}
-
-function decodeOID(buffer: ArrayBuffer): OIDString {
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length === 0) throw new Error("Empty OID encoding");
-  const firstByte = bytes[0];
-  let first = Math.floor(firstByte / 40);
-  let second = firstByte % 40;
-  if (firstByte >= 80) {
-    first = 2;
-    second = firstByte - 80;
-  }
-  const arcs: number[] = [first, second];
-  let i = 1;
-  while (i < bytes.length) {
-    let val = 0;
-    let b: number;
-    do {
-      if (i >= bytes.length) throw new Error("Truncated OID");
-      b = bytes[i++];
-      val = (val << 7) | (b & 0x7f);
-    } while (b & 0x80);
-    arcs.push(val);
-  }
-  return arcs.join(".");
-}
-
-function encodeBase128(n: number): number[] {
-  if (n === 0) return [0x00];
-  const stack: number[] = [];
-  while (n > 0) {
-    stack.push(n & 0x7f);
-    n = Math.floor(n / 128);
-  }
-  const out = stack.reverse();
-  for (let i = 0; i < out.length - 1; i++) out[i] |= 0x80;
-  return out;
-}
 
 // INTEGER (positive) helpers (DER minimal length)
-function encodeInteger(n: number): ArrayBuffer {
-  if (!Number.isFinite(n) || n < 0)
-    throw new Error("Only non-negative INTEGER supported");
-  if (n === 0) return new Uint8Array([0x00]).buffer;
-  const out: number[] = [];
-  let temp = n;
-  while (temp > 0) {
-    out.unshift(temp & 0xff);
-    temp >>>= 8;
-  }
-  // Ensure the first bit is not interpreted as sign bit
-  if (out[0] & 0x80) out.unshift(0x00);
-  return new Uint8Array(out).buffer;
-}
-
-function decodeInteger(buffer: ArrayBuffer): number {
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length === 0) return 0;
-  // Ignore potential leading 0x00 for positive sign
-  let i = 0;
-  if (bytes[0] === 0x00 && bytes.length > 1) i = 1;
-  let n = 0;
-  for (; i < bytes.length; i++) n = (n << 8) | bytes[i];
-  return n;
-}
-
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(buf).set(u8);
-  return buf;
-}
 
 // Common CMS and Algorithm OIDs
 const CMS_OIDS = {
