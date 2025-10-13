@@ -83,6 +83,46 @@ function isPrimitiveSchema(
   return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
 }
 
+// Module-level helpers for DER ordering and lexicographic comparison
+function encodeTag(field: TLVSchema): Uint8Array {
+  const tagClass = field.tagClass ?? TagClass.Universal;
+  const tagNumber = field.tagNumber ?? 0;
+  const constructed = isConstructedSchema(field) ? 0x20 : 0x00;
+  const bytes: number[] = [];
+  let firstByte = (tagClass << 6) | constructed;
+  if (tagNumber < 31) {
+    firstByte |= tagNumber;
+    bytes.push(firstByte);
+  } else {
+    firstByte |= 0x1f;
+    bytes.push(firstByte);
+    let num = tagNumber;
+    const tagNumBytes: number[] = [];
+    do {
+      tagNumBytes.unshift(num % 128);
+      num = Math.floor(num / 128);
+    } while (num > 0);
+    for (let i = 0; i < tagNumBytes.length - 1; i++) {
+      bytes.push(tagNumBytes[i] | 0x80);
+    }
+    bytes.push(tagNumBytes[tagNumBytes.length - 1]);
+  }
+  return new Uint8Array(bytes);
+}
+
+/**
+ * Compare two Uint8Arrays lexicographically.
+ * Returns -1 if a < b, 1 if a > b, 0 if equal.
+ */
+function lexCompare(a: Uint8Array, b: Uint8Array): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+  return 0;
+}
+
 /**
  * A builder that builds TLV data based on a given schema (synchronous or asynchronous).
  * @template S - The schema type.
@@ -226,47 +266,8 @@ export class SchemaBuilder<S extends TLVSchema> {
         this.strict
       ) {
         fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          // Encode tag bytes for comparison
-          const encodeTag = (field: TLVSchema) => {
-            const tagClass = field.tagClass ?? TagClass.Universal;
-            const tagNumber = field.tagNumber ?? 0;
-            const constructed = isConstructedSchema(field) ? 0x20 : 0x00;
-            const bytes: number[] = [];
-            let firstByte = (tagClass << 6) | constructed;
-            if (tagNumber < 31) {
-              firstByte |= tagNumber;
-              bytes.push(firstByte);
-            } else {
-              firstByte |= 0x1f;
-              bytes.push(firstByte);
-              let num = tagNumber;
-              const tagNumBytes: number[] = [];
-              do {
-                tagNumBytes.unshift(num % 128);
-                num = Math.floor(num / 128);
-              } while (num > 0);
-              for (let i = 0; i < tagNumBytes.length - 1; i++) {
-                bytes.push(tagNumBytes[i] | 0x80);
-              }
-              bytes.push(tagNumBytes[tagNumBytes.length - 1]);
-            }
-            return new Uint8Array(bytes);
-          };
-          return compareUint8Arrays(encodeTag(a), encodeTag(b));
+          return lexCompare(encodeTag(a), encodeTag(b));
         });
-
-        /**
-         * Compare two Uint8Arrays lexicographically.
-         * Returns -1 if a < b, 1 if a > b, 0 if equal.
-         */
-        function compareUint8Arrays(a: Uint8Array, b: Uint8Array): number {
-          const len = Math.min(a.length, b.length);
-          for (let i = 0; i < len; i++) {
-            if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-          }
-          if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-          return 0;
-        }
       }
 
       const childrenBuffers = fieldsToProcess.map((fieldSchema) => {
@@ -357,17 +358,11 @@ export class SchemaBuilder<S extends TLVSchema> {
           this.buildWithSchemaAsync(schema.item, itemData),
         ),
       );
-
-      if (schema.kind === "setOf") {
+      if (schema.kind === "setOf" && this.strict) {
         childBuffers = childBuffers.slice().sort((a, b) => {
           const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
           const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          const len = Math.min(ua.length, ub.length);
-          for (let i = 0; i < len; i++) {
-            if (ua[i] !== ub[i]) return ua[i] < ub[i] ? -1 : 1;
-          }
-          if (ua.length !== ub.length) return ua.length < ub.length ? -1 : 1;
-          return 0;
+          return lexCompare(ua, ub);
         });
       }
 
@@ -395,17 +390,17 @@ export class SchemaBuilder<S extends TLVSchema> {
     }
 
     if (isConstructedSchema(schema)) {
-      const fieldsToProcess = [...schema.fields];
+      let fieldsToProcess = [...schema.fields];
 
-      // For SET, sort fields by tag as required by DER
+      // For SET, sort fields by tag as required by DER strict mode
       if (
-        (schema.tagNumber === 17 && schema.tagClass === TagClass.Universal) ||
-        (schema.tagNumber === 17 && schema.tagClass === undefined)
+        schema.tagNumber === 17 &&
+        (schema.tagClass === TagClass.Universal ||
+          schema.tagClass === undefined) &&
+        this.strict
       ) {
-        fieldsToProcess.sort((a, b) => {
-          const tagA = a.tagNumber ?? 0;
-          const tagB = b.tagNumber ?? 0;
-          return tagA - tagB;
+        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
+          return lexCompare(encodeTag(a), encodeTag(b));
         });
       }
 
