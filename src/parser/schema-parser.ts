@@ -1,5 +1,5 @@
 import { BasicTLVParser } from "./basic-parser.js";
-import { BasicTLVBuilder } from "../builder/basic-builder.js";
+
 import { TagClass, TagInfo } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
@@ -188,7 +188,11 @@ export class SchemaParser<S extends TLVSchema> {
       const encodedChildren: Uint8Array[] = [];
       while (subOffset < value.byteLength) {
         const childTLV = BasicTLVParser.parse(value.slice(subOffset));
-        encodedChildren.push(new Uint8Array(BasicTLVBuilder.build(childTLV)));
+        encodedChildren.push(
+          new Uint8Array(
+            value.slice(subOffset, subOffset + childTLV.endOffset),
+          ),
+        );
 
         const childParser = new SchemaParser(schema.item, {
           strict: this.strict,
@@ -244,7 +248,10 @@ export class SchemaParser<S extends TLVSchema> {
           const encodeTag = (field: TLVSchema) => {
             const tagClass = field.tagClass ?? TagClass.Universal;
             const tagNumber = field.tagNumber ?? 0;
-            const constructed = isConstructedSchema(field) ? 0x20 : 0x00;
+            const constructed =
+              isConstructedSchema(field) || isRepeatedSchema(field)
+                ? 0x20
+                : 0x00;
             const bytes: number[] = [];
             let firstByte = (tagClass << 6) | constructed;
             if (tagNumber < 31) {
@@ -339,7 +346,9 @@ export class SchemaParser<S extends TLVSchema> {
       const results = [] as Array<ParsedResult<typeof schema.item>>;
       while (subOffset < value.byteLength) {
         const childTLV = BasicTLVParser.parse(value.slice(subOffset));
-        const fieldParser = new SchemaParser(schema.item);
+        const fieldParser = new SchemaParser(schema.item, {
+          strict: this.strict,
+        });
         const parsedField = await fieldParser.parseAsync(
           value.slice(subOffset),
         );
@@ -363,7 +372,7 @@ export class SchemaParser<S extends TLVSchema> {
       };
 
       for (const field of schema.fields) {
-        const fieldParser = new SchemaParser(field);
+        const fieldParser = new SchemaParser(field, { strict: this.strict });
         const parsedField = await fieldParser.parseAsync(
           value.slice(subOffset),
         );
