@@ -89,13 +89,21 @@ export class BasicTLVParser {
     view: DataView,
     offset: number,
   ): { length: number; newOffset: number } {
-    let length = view.getUint8(offset++);
-    if (length & 0x80) {
-      const numBytes = length & 0x7f;
+    const first = view.getUint8(offset++);
+    // DER forbids indefinite length (0x80)
+    if (first === 0x80) {
+      throw new Error("Indefinite length encoding is not allowed (DER)");
+    }
+
+    let length: number;
+    if (first & 0x80) {
+      const numBytes = first & 0x7f;
       length = 0;
       for (let i = 0; i < numBytes; i++) {
         length = (length << 8) | view.getUint8(offset++);
       }
+    } else {
+      length = first;
     }
     return { length, newOffset: offset };
   }
@@ -112,7 +120,11 @@ export class BasicTLVParser {
     offset: number,
     length: number,
   ) {
-    const value = buffer.slice(offset, offset + length);
-    return { value, newOffset: offset + length };
+    const end = offset + length;
+    if (end > buffer.byteLength) {
+      throw new Error("Declared length exceeds available bytes");
+    }
+    const value = buffer.slice(offset, end);
+    return { value, newOffset: end };
   }
 }
