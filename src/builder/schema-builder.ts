@@ -10,6 +10,7 @@ interface TLVSchemaBase {
   readonly name: string;
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
+  readonly optional?: boolean;
 }
 
 /**
@@ -22,6 +23,7 @@ export interface PrimitiveTLVSchema<EncodedType = DefaultEncodeType>
    * Optional encode function which can return either a value or a Promise of a value.
    */
   readonly encode?: (data: EncodedType) => ArrayBuffer | Promise<ArrayBuffer>;
+  readonly defaultValue?: EncodedType;
 }
 
 /**
@@ -36,25 +38,61 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
   readonly kind: "repeated";
-  readonly optional?: boolean;
+}
+
+interface ChoiceOption<T extends TLVSchema> {
+  readonly name: string;
+  readonly schema: T;
+}
+
+interface ChoiceTLVSchema<
+  Options extends readonly ChoiceOption<TLVSchema>[],
+> extends TLVSchemaBase {
+  readonly kind: "choice";
+  readonly options: Options;
 }
 
 type TLVSchema =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | PrimitiveTLVSchema<any>
   | ConstructedTLVSchema<readonly TLVSchema[]>
-  | RepeatedTLVSchema;
+  | RepeatedTLVSchema
+  | ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]>;
 
-export type BuildData<S extends TLVSchema> =
+type OptionalOrDefaultFields<F extends readonly TLVSchema[]> = Extract<
+  F[number],
+  { optional: true } | { defaultValue: unknown }
+>;
+
+type BuildConstructed<F extends readonly TLVSchema[]> = {
+  [Field in OptionalOrDefaultFields<F> as Field["name"]]?: BuildData<Field>;
+} & {
+  [Field in Exclude<F[number], OptionalOrDefaultFields<F>> as Field["name"]]: BuildData<Field>;
+};
+
+type BuildValue<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
-    ? {
-        [Field in F[number] as Field["name"]]: BuildData<Field>;
-      }
+    ? BuildConstructed<F>
     : S extends PrimitiveTLVSchema<infer EncodedType>
       ? EncodedType
       : S extends RepeatedTLVSchema
         ? Array<BuildData<S["item"]>>
+        : S extends ChoiceTLVSchema<infer O>
+          ? ChoiceBuild<O>
         : never;
+
+export type BuildData<S extends TLVSchema> = S extends { optional: true }
+  ? BuildValue<S> | undefined
+  : BuildValue<S>;
+
+type ChoiceBuild<
+  Options extends readonly ChoiceOption<TLVSchema>[],
+> = {
+  [Option in Options[number]]: {
+    type: Option["name"];
+    value: BuildData<Option["schema"]>;
+  };
+}[Options[number]];
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -82,8 +120,59 @@ function isPrimitiveSchema(
   return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
 }
 
+function isChoiceSchema(
+  schema: TLVSchema,
+): schema is ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]> {
+  return (schema as ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]>).kind === "choice";
+}
+
+function hasDefaultValue(
+  schema: TLVSchema,
+): schema is PrimitiveTLVSchema<unknown> & { defaultValue: unknown } {
+  return (
+    isPrimitiveSchema(schema) && schema.defaultValue !== undefined
+  );
+}
+
+function arrayBufferEquals(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const viewA = new Uint8Array(a);
+  const viewB = new Uint8Array(b);
+  for (let i = 0; i < viewA.length; i++) {
+    if (viewA[i] !== viewB[i]) return false;
+  }
+  return true;
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a instanceof ArrayBuffer && b instanceof ArrayBuffer) {
+    return arrayBufferEquals(a, b);
+  }
+  if (a instanceof Uint8Array && b instanceof Uint8Array) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+  if (a instanceof ArrayBuffer && b instanceof Uint8Array) {
+    return valuesEqual(new Uint8Array(a), b);
+  }
+  if (a instanceof Uint8Array && b instanceof ArrayBuffer) {
+    return valuesEqual(a, new Uint8Array(b));
+  }
+  return Object.is(a, b);
+}
+
 // Module-level helpers for DER ordering and lexicographic comparison
 function encodeTag(field: TLVSchema): Uint8Array {
+  if (isChoiceSchema(field)) {
+    const candidateTags = field.options
+      .map((option) => encodeTag(option.schema))
+      .filter((bytes) => bytes.length > 0)
+      .sort(lexCompare);
+    return candidateTags[0] ?? new Uint8Array();
+  }
   const tagClass = field.tagClass ?? TagClass.Universal;
   const tagNumber = field.tagNumber ?? (isRepeatedSchema(field) ? 16 : 0);
   const constructed =
@@ -258,6 +347,33 @@ export class SchemaBuilder<S extends TLVSchema> {
       });
     }
 
+    if (isChoiceSchema(schema)) {
+      const choiceData = data as ChoiceBuild<
+        readonly ChoiceOption<TLVSchema>[]
+      >;
+      if (
+        choiceData === undefined ||
+        choiceData === null ||
+        typeof choiceData !== "object"
+      ) {
+        throw new Error(`Choice field '${schema.name}' requires a selection.`);
+      }
+      const option = schema.options.find(
+        (candidate) => candidate.name === (choiceData as { type?: string }).type,
+      );
+      if (!option) {
+        throw new Error(
+          `Invalid choice selection for '${schema.name}': ${(choiceData as { type?: string }).type ?? "undefined"}`,
+        );
+      }
+      return this.buildWithSchemaSync(
+        option.schema,
+        (choiceData as { value: unknown }).value as BuildData<
+          (typeof option)["schema"]
+        >,
+      );
+    }
+
     if (isConstructedSchema(schema)) {
       let fieldsToProcess = [...schema.fields];
 
@@ -273,19 +389,36 @@ export class SchemaBuilder<S extends TLVSchema> {
         });
       }
 
-      const childrenBuffers = fieldsToProcess.map((fieldSchema) => {
+      const childrenBuffers: ArrayBuffer[] = [];
+      for (const fieldSchema of fieldsToProcess) {
         const fieldName = fieldSchema.name;
         const fieldData = (data as Record<string, unknown>)[fieldName];
+        const defaultEnabled = hasDefaultValue(fieldSchema);
 
         if (fieldData === undefined) {
+          if (defaultEnabled) {
+            continue;
+          }
+          if (fieldSchema.optional) {
+            continue;
+          }
           throw new Error(`Missing required field: ${fieldName}`);
         }
 
-        return this.buildWithSchemaSync(
-          fieldSchema,
-          fieldData as BuildData<typeof fieldSchema>,
+        if (
+          defaultEnabled &&
+          valuesEqual(fieldData, fieldSchema.defaultValue)
+        ) {
+          continue;
+        }
+
+        childrenBuffers.push(
+          this.buildWithSchemaSync(
+            fieldSchema,
+            fieldData as BuildData<typeof fieldSchema>,
+          ),
         );
-      });
+      }
 
       // Avoid unnecessary ArrayBuffer copies
       const totalLength = childrenBuffers.reduce(
@@ -395,6 +528,33 @@ export class SchemaBuilder<S extends TLVSchema> {
       });
     }
 
+    if (isChoiceSchema(schema)) {
+      const choiceData = data as ChoiceBuild<
+        readonly ChoiceOption<TLVSchema>[]
+      >;
+      if (
+        choiceData === undefined ||
+        choiceData === null ||
+        typeof choiceData !== "object"
+      ) {
+        throw new Error(`Choice field '${schema.name}' requires a selection.`);
+      }
+      const option = schema.options.find(
+        (candidate) => candidate.name === (choiceData as { type?: string }).type,
+      );
+      if (!option) {
+        throw new Error(
+          `Invalid choice selection for '${schema.name}': ${(choiceData as { type?: string }).type ?? "undefined"}`,
+        );
+      }
+      return await this.buildWithSchemaAsync(
+        option.schema,
+        (choiceData as { value: unknown }).value as BuildData<
+          (typeof option)["schema"]
+        >,
+      );
+    }
+
     if (isConstructedSchema(schema)) {
       let fieldsToProcess = [...schema.fields];
 
@@ -410,20 +570,38 @@ export class SchemaBuilder<S extends TLVSchema> {
         });
       }
 
-      const childBuffers = await Promise.all(
-        fieldsToProcess.map((fieldSchema) => {
-          const fieldName = fieldSchema.name;
-          const fieldData = (data as Record<string, unknown>)[fieldName];
+      const buildTasks: Promise<ArrayBuffer>[] = [];
+      for (const fieldSchema of fieldsToProcess) {
+        const fieldName = fieldSchema.name;
+        const fieldData = (data as Record<string, unknown>)[fieldName];
+        const defaultEnabled = hasDefaultValue(fieldSchema);
 
-          if (fieldData === undefined) {
-            throw new Error(`Missing required field: ${fieldName}`);
+        if (fieldData === undefined) {
+          if (defaultEnabled) {
+            continue;
           }
-          return this.buildWithSchemaAsync(
+          if (fieldSchema.optional) {
+            continue;
+          }
+          throw new Error(`Missing required field: ${fieldName}`);
+        }
+
+        if (
+          defaultEnabled &&
+          valuesEqual(fieldData, fieldSchema.defaultValue)
+        ) {
+          continue;
+        }
+
+        buildTasks.push(
+          this.buildWithSchemaAsync(
             fieldSchema,
             fieldData as BuildData<typeof fieldSchema>,
-          );
-        }),
-      );
+          ),
+        );
+      }
+
+      const childBuffers = await Promise.all(buildTasks);
 
       const totalLength = childBuffers.reduce(
         (sum, buf) => sum + buf.byteLength,
@@ -496,6 +674,8 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
+      defaultValue?: E;
     },
   ): PrimitiveTLVSchema<E> & { name: N };
 
@@ -506,6 +686,8 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
+      defaultValue?: ArrayBuffer;
     },
   ): PrimitiveTLVSchema<ArrayBuffer> & { name: N };
 
@@ -516,14 +698,18 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
+      defaultValue?: E;
     },
   ): PrimitiveTLVSchema<E> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
+    const { tagClass, tagNumber, optional, defaultValue } = options ?? {};
     return {
       name,
       encode,
       tagClass,
       tagNumber,
+      optional,
+      defaultValue,
     };
   }
 
@@ -540,14 +726,16 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
     },
   ): ConstructedTLVSchema<F> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
+    const { tagClass, tagNumber, optional } = options ?? {};
     return {
       name,
       fields,
       tagClass,
       tagNumber,
+      optional,
     };
   }
 
@@ -579,6 +767,25 @@ export class Schema {
       tagClass,
       tagNumber,
       optional,
+    };
+  }
+
+  /**
+   * Creates a choice TLV schema definition.
+   */
+  public static choice<
+    N extends string,
+    Options extends readonly ChoiceOption<TLVSchema>[],
+  >(
+    name: N,
+    optionsList: Options,
+    options?: { optional?: boolean },
+  ): ChoiceTLVSchema<Options> & { name: N } {
+    return {
+      name,
+      kind: "choice",
+      options: optionsList,
+      optional: options?.optional,
     };
   }
 }

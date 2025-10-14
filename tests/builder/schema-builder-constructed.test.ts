@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { SchemaBuilder, Schema } from "../../src/builder";
+import { SchemaBuilder, Schema, TagClass } from "../../src/builder";
+import {
+  Schema as ParserSchema,
+  SchemaParser,
+  TagClass as ParserTagClass,
+} from "../../src/parser";
 import type { BuildData } from "../../src/builder/schema-builder";
 import { Encoders, CommonTags, ExpectHelpers } from "./test-helpers";
 
@@ -133,5 +138,219 @@ describe("SchemaBuilder - Constructed schemas", () => {
       constructed: true,
     });
     ExpectHelpers.expectBufferBytes(result, [0x30, 0x00]);
+  });
+
+  test("should skip optional fields when data is not provided", () => {
+    const nicknameSchema = Schema.primitive(
+      "nickname",
+      Encoders.string,
+      { ...CommonTags.CONTEXT_SPECIFIC_0, optional: true },
+    );
+    const nameSchema = Schema.primitive(
+      "name",
+      Encoders.string,
+      CommonTags.UTF8_STRING,
+    );
+    const ageSchema = Schema.primitive(
+      "age",
+      Encoders.singleByte,
+      CommonTags.INTEGER,
+    );
+    const personSchema = Schema.constructed(
+      "person",
+      [nicknameSchema, nameSchema, ageSchema],
+      CommonTags.SEQUENCE,
+    );
+
+    const builder = new SchemaBuilder(personSchema);
+    const encoded = builder.build({
+      name: "Alice",
+      age: 30,
+    });
+
+    const decodeString = (buffer: ArrayBuffer) =>
+      new TextDecoder().decode(buffer);
+    const decodeAge = (buffer: ArrayBuffer) => new Uint8Array(buffer)[0];
+    const parserSchema = ParserSchema.constructed(
+      "person",
+      [
+        ParserSchema.primitive("nickname", decodeString, {
+          tagClass: ParserTagClass.ContextSpecific,
+          tagNumber: 0,
+          optional: true,
+        }),
+        ParserSchema.primitive("name", decodeString, {
+          tagClass: ParserTagClass.Universal,
+          tagNumber: 12,
+        }),
+        ParserSchema.primitive("age", decodeAge, {
+          tagClass: ParserTagClass.Universal,
+          tagNumber: 2,
+        }),
+      ],
+      {
+        tagClass: ParserTagClass.Universal,
+        tagNumber: 16,
+      },
+    );
+
+    const parser = new SchemaParser(parserSchema);
+    const parsed = parser.parse(encoded) as {
+      nickname?: string;
+      name: string;
+      age: number;
+    };
+
+    expect(parsed.nickname).toBeUndefined();
+    expect(parsed.name).toBe("Alice");
+    expect(parsed.age).toBe(30);
+  });
+
+  test("should omit primitive field when value equals default", () => {
+    const statusSchema = Schema.primitive(
+      "status",
+      Encoders.number,
+      {
+        tagClass: TagClass.ContextSpecific,
+        tagNumber: 0,
+        defaultValue: 0,
+      },
+    );
+    const amountSchema = Schema.primitive(
+      "amount",
+      Encoders.number,
+      CommonTags.INTEGER,
+    );
+    const paymentSchema = Schema.constructed(
+      "payment",
+      [statusSchema, amountSchema],
+      CommonTags.SEQUENCE,
+    );
+
+    const builder = new SchemaBuilder(paymentSchema);
+    const encoded = builder.build({
+      amount: 5,
+    } as BuildData<typeof paymentSchema>);
+
+    const decodeInteger = (buffer: ArrayBuffer) => {
+      const view = new Uint8Array(buffer);
+      let value = 0;
+      for (const byte of view) {
+        value = (value << 8) | byte;
+      }
+      return value;
+    };
+
+    const parserSchema = ParserSchema.constructed(
+      "payment",
+      [
+        ParserSchema.primitive("status", decodeInteger, {
+          tagClass: ParserTagClass.ContextSpecific,
+          tagNumber: 0,
+          defaultValue: 0,
+        }),
+        ParserSchema.primitive("amount", decodeInteger, {
+          tagClass: ParserTagClass.Universal,
+          tagNumber: 2,
+        }),
+      ],
+      {
+        tagClass: ParserTagClass.Universal,
+        tagNumber: 16,
+      },
+    );
+    const parser = new SchemaParser(parserSchema);
+    const parsed = parser.parse(encoded) as {
+      status: number;
+      amount: number;
+    };
+
+    expect(parsed.status).toBe(0);
+    expect(parsed.amount).toBe(5);
+
+    const encodedView = new Uint8Array(encoded);
+    // Outer sequence tag (0x30) + length + inner INTEGER
+    expect(encodedView[0]).toBe(0x30);
+    // Should only contain one INTEGER child (amount)
+    const childContentLength = encodedView[1];
+    expect(childContentLength).toBe(encoded.byteLength - 2);
+  });
+
+  test("should build choice variant and roundtrip", () => {
+    const contactChoice = Schema.choice("contact", [
+      {
+        name: "email",
+        schema: Schema.primitive(
+          "email",
+          Encoders.string,
+          CommonTags.UTF8_STRING,
+        ),
+      },
+      {
+        name: "phone",
+        schema: Schema.primitive(
+          "phone",
+          Encoders.string,
+          {
+            tagClass: TagClass.ContextSpecific,
+            tagNumber: 0,
+          },
+        ),
+      },
+    ]);
+    const personSchema = Schema.constructed(
+      "person",
+      [contactChoice],
+      CommonTags.SEQUENCE,
+    );
+
+    const builder = new SchemaBuilder(personSchema);
+    const encoded = builder.build({
+      contact: {
+        type: "phone",
+        value: "12345",
+      },
+    } as BuildData<typeof personSchema>);
+
+    const parserChoice = ParserSchema.choice("contact", [
+      {
+        name: "email",
+        schema: ParserSchema.primitive(
+          "email",
+          (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
+          {
+            tagClass: ParserTagClass.Universal,
+            tagNumber: 12,
+          },
+        ),
+      },
+      {
+        name: "phone",
+        schema: ParserSchema.primitive(
+          "phone",
+          (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
+          {
+            tagClass: ParserTagClass.ContextSpecific,
+            tagNumber: 0,
+          },
+        ),
+      },
+    ]);
+    const parserSchema = ParserSchema.constructed(
+      "person",
+      [parserChoice],
+      {
+        tagClass: ParserTagClass.Universal,
+        tagNumber: 16,
+      },
+    );
+
+    const parser = new SchemaParser(parserSchema);
+    const parsed = parser.parse(encoded) as {
+      contact: { type: string; value: string };
+    };
+
+    expect(parsed.contact.type).toBe("phone");
+    expect(parsed.contact.value).toBe("12345");
   });
 });

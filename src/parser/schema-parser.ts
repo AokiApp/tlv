@@ -11,6 +11,7 @@ interface TLVSchemaBase {
   readonly name: string;
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
+  readonly optional?: boolean;
 }
 
 /**
@@ -23,6 +24,7 @@ export interface PrimitiveTLVSchema<DecodedType = DefaultEncodeType>
    * Optional decode function which can return either a value or a Promise of a value.
    */
   readonly decode?: (buffer: ArrayBuffer) => DecodedType | Promise<DecodedType>;
+  readonly defaultValue?: DecodedType;
 }
 
 /**
@@ -37,24 +39,55 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
   readonly kind: "repeated";
-  readonly optional?: boolean;
+}
+
+interface ChoiceOption<T extends TLVSchema> {
+  readonly name: string;
+  readonly schema: T;
+}
+
+interface ChoiceTLVSchema<
+  Options extends readonly ChoiceOption<TLVSchema>[],
+> extends TLVSchemaBase {
+  readonly kind: "choice";
+  readonly options: Options;
 }
 
 type TLVSchema =
   | PrimitiveTLVSchema<unknown>
   | ConstructedTLVSchema<readonly TLVSchema[]>
-  | RepeatedTLVSchema;
+  | RepeatedTLVSchema
+  | ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]>;
 
-type ParsedResult<S extends TLVSchema> =
+type ParsedConstructed<F extends readonly TLVSchema[]> = {
+  [Field in Extract<F[number], { optional: true }> as Field["name"]]?: ParsedResult<Field>;
+} & {
+  [Field in Exclude<F[number], { optional: true }> as Field["name"]]: ParsedResult<Field>;
+};
+
+type ParsedValue<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
-    ? {
-        [Field in F[number] as Field["name"]]: ParsedResult<Field>;
-      }
+    ? ParsedConstructed<F>
     : S extends PrimitiveTLVSchema<infer DecodedType>
       ? DecodedType
       : S extends RepeatedTLVSchema
         ? Array<ParsedResult<S["item"]>>
+        : S extends ChoiceTLVSchema<infer O>
+          ? ChoiceParsed<O>
         : never;
+
+type ParsedResult<S extends TLVSchema> = S extends { optional: true }
+  ? ParsedValue<S> | undefined
+  : ParsedValue<S>;
+
+type ChoiceParsed<
+  Options extends readonly ChoiceOption<TLVSchema>[],
+> = {
+  [Option in Options[number]]: {
+    type: Option["name"];
+    value: ParsedResult<Option["schema"]>;
+  };
+}[Options[number]];
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -81,6 +114,12 @@ function isPrimitiveSchema(
   schema: TLVSchema,
 ): schema is PrimitiveTLVSchema<unknown> {
   return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
+}
+
+function isChoiceSchema(
+  schema: TLVSchema,
+): schema is ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]> {
+  return (schema as ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]>).kind === "choice";
 }
 /**
  * A parser that parses TLV data based on a given schema (synchronous or asynchronous).
@@ -176,6 +215,13 @@ export class SchemaParser<S extends TLVSchema> {
    */
   private parseWithSchemaSync<T extends TLVSchema>(schema: T): ParsedResult<T> {
     const subBuffer = this.buffer.slice(this.offset);
+
+    if (isChoiceSchema(schema)) {
+      const { value, consumed } = this.parseChoiceSync(subBuffer, schema);
+      this.offset += consumed;
+      return value as ParsedResult<T>;
+    }
+
     const { tag, value, endOffset } = BasicTLVParser.parse(subBuffer);
     this.offset += endOffset;
 
@@ -296,6 +342,20 @@ export class SchemaParser<S extends TLVSchema> {
       };
 
       for (const field of fieldsToProcess) {
+        const evaluation = this.evaluateField(value, subOffset, field);
+        if (evaluation === "skip") {
+          continue;
+        }
+        if (evaluation === "default") {
+          if (!isPrimitiveSchema(field)) {
+            throw new Error(
+              `Default value is only supported for primitive fields: ${field.name}`,
+            );
+          }
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          result[field.name] = field.defaultValue as ParsedResult<typeof field>;
+          continue;
+        }
         const fieldParser = new SchemaParser(field, { strict: this.strict });
         result[field.name] = fieldParser.parse(value.slice(subOffset));
         subOffset += fieldParser.offset;
@@ -337,6 +397,13 @@ export class SchemaParser<S extends TLVSchema> {
     schema: T,
   ): Promise<ParsedResult<T>> {
     const subBuffer = this.buffer.slice(this.offset);
+
+    if (isChoiceSchema(schema)) {
+      const { value, consumed } = await this.parseChoiceAsync(subBuffer, schema);
+      this.offset += consumed;
+      return value as ParsedResult<T>;
+    }
+
     const { tag, value, endOffset } = BasicTLVParser.parse(subBuffer);
     this.offset += endOffset;
 
@@ -397,11 +464,75 @@ export class SchemaParser<S extends TLVSchema> {
 
     if (isConstructedSchema(schema)) {
       let subOffset = 0;
+      let fieldsToProcess = [...schema.fields];
+
+      if (
+        schema.tagNumber === 17 &&
+        (schema.tagClass === TagClass.Universal ||
+          schema.tagClass === undefined) &&
+        this.strict
+      ) {
+        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
+          const encodeTag = (field: TLVSchema) => {
+            const tagClass = field.tagClass ?? TagClass.Universal;
+            const tagNumber = field.tagNumber ?? 0;
+            const constructed =
+              isConstructedSchema(field) || isRepeatedSchema(field)
+                ? 0x20
+                : 0x00;
+            const bytes: number[] = [];
+            let firstByte = (tagClass << 6) | constructed;
+            if (tagNumber < 31) {
+              firstByte |= tagNumber;
+              bytes.push(firstByte);
+            } else {
+              firstByte |= 0x1f;
+              bytes.push(firstByte);
+              let num = tagNumber;
+              const tagNumBytes: number[] = [];
+              do {
+                tagNumBytes.unshift(num % 128);
+                num = Math.floor(num / 128);
+              } while (num > 0);
+              for (let i = 0; i < tagNumBytes.length - 1; i++) {
+                bytes.push(tagNumBytes[i] | 0x80);
+              }
+              bytes.push(tagNumBytes[tagNumBytes.length - 1]);
+            }
+            return new Uint8Array(bytes);
+          };
+          return compareUint8Arrays(encodeTag(a), encodeTag(b));
+        });
+
+        function compareUint8Arrays(a: Uint8Array, b: Uint8Array): number {
+          const len = Math.min(a.length, b.length);
+          for (let i = 0; i < len; i++) {
+            if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+          }
+          if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+          return 0;
+        }
+      }
+
       const result = {} as {
-        [K in (typeof schema.fields)[number] as K["name"]]: ParsedResult<K>;
+        [K in (typeof fieldsToProcess)[number] as K["name"]]: ParsedResult<K>;
       };
 
-      for (const field of schema.fields) {
+      for (const field of fieldsToProcess) {
+        const evaluation = this.evaluateField(value, subOffset, field);
+        if (evaluation === "skip") {
+          continue;
+        }
+        if (evaluation === "default") {
+          if (!isPrimitiveSchema(field)) {
+            throw new Error(
+              `Default value is only supported for primitive fields: ${field.name}`,
+            );
+          }
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          result[field.name] = field.defaultValue as ParsedResult<typeof field>;
+          continue;
+        }
         const fieldParser = new SchemaParser(field, { strict: this.strict });
         const parsedField = await fieldParser.parseAsync(
           value.slice(subOffset),
@@ -457,6 +588,150 @@ export class SchemaParser<S extends TLVSchema> {
       );
     }
   }
+
+  private parseChoiceSync<
+    Options extends readonly ChoiceOption<TLVSchema>[],
+  >(
+    buffer: ArrayBuffer,
+    schema: ChoiceTLVSchema<Options>,
+  ): {
+    value: ChoiceParsed<Options>;
+    consumed: number;
+  } {
+    const peeked = BasicTLVParser.peekTag(buffer);
+    if (!peeked) {
+      throw new Error(`Choice field '${schema.name}' is empty`);
+    }
+    const option = this.findChoiceOption(peeked.tag, schema);
+    if (!option) {
+      throw new Error(
+        `No matching choice option found for tag class=${peeked.tag.tagClass}, number=${peeked.tag.tagNumber}`,
+      );
+    }
+    const optionParser = new SchemaParser(option.schema, {
+      strict: this.strict,
+    });
+    const value = optionParser.parse(buffer);
+    return {
+      value: {
+        type: option.name,
+        value: value as ParsedResult<typeof option.schema>,
+      } as ChoiceParsed<Options>,
+      consumed: optionParser.offset,
+    };
+  }
+
+  private async parseChoiceAsync<
+    Options extends readonly ChoiceOption<TLVSchema>[],
+  >(
+    buffer: ArrayBuffer,
+    schema: ChoiceTLVSchema<Options>,
+  ): Promise<{
+    value: ChoiceParsed<Options>;
+    consumed: number;
+  }> {
+    const peeked = BasicTLVParser.peekTag(buffer);
+    if (!peeked) {
+      throw new Error(`Choice field '${schema.name}' is empty`);
+    }
+    const option = this.findChoiceOption(peeked.tag, schema);
+    if (!option) {
+      throw new Error(
+        `No matching choice option found for tag class=${peeked.tag.tagClass}, number=${peeked.tag.tagNumber}`,
+      );
+    }
+    const optionParser = new SchemaParser(option.schema, {
+      strict: this.strict,
+    });
+    const value = await optionParser.parseAsync(buffer);
+    return {
+      value: {
+        type: option.name,
+        value: value as ParsedResult<typeof option.schema>,
+      } as ChoiceParsed<Options>,
+      consumed: optionParser.offset,
+    };
+  }
+
+  private findChoiceOption<
+    Options extends readonly ChoiceOption<TLVSchema>[],
+  >(
+    tagInfo: TagInfo,
+    schema: ChoiceTLVSchema<Options>,
+  ): ChoiceOption<TLVSchema> | undefined {
+    return schema.options.find((option) =>
+      this.doesTagMatch(tagInfo, option.schema),
+    );
+  }
+
+  private evaluateField(
+    container: ArrayBuffer,
+    offset: number,
+    field: TLVSchema,
+  ): "parse" | "skip" | "default" {
+    const optional = field.optional ?? false;
+    const hasDefault =
+      isPrimitiveSchema(field) && field.defaultValue !== undefined;
+
+    if (offset >= container.byteLength) {
+      if (hasDefault) {
+        return "default";
+      }
+      if (optional) {
+        return "skip";
+      }
+      throw new Error(`Missing required field: ${field.name}`);
+    }
+
+    const peeked = BasicTLVParser.peekTag(container, offset);
+    if (!peeked) {
+      if (hasDefault) {
+        return "default";
+      }
+      if (optional) {
+        return "skip";
+      }
+      throw new Error(`Missing required field: ${field.name}`);
+    }
+
+    if (!this.doesTagMatch(peeked.tag, field)) {
+      if (hasDefault) {
+        return "default";
+      }
+      if (optional) {
+        return "skip";
+      }
+      throw new Error(`Tag mismatch or missing required field: ${field.name}`);
+    }
+
+    return "parse";
+  }
+
+  private doesTagMatch(tagInfo: TagInfo, schema: TLVSchema): boolean {
+    if (isChoiceSchema(schema)) {
+      return schema.options.some((option) =>
+        this.doesTagMatch(tagInfo, option.schema),
+      );
+    }
+    if (schema.tagClass !== undefined && schema.tagClass !== tagInfo.tagClass) {
+      return false;
+    }
+
+    const expectedConstructed =
+      isConstructedSchema(schema) || isRepeatedSchema(schema);
+    if (expectedConstructed !== tagInfo.constructed) {
+      return false;
+    }
+
+    if (
+      schema.tagNumber !== undefined &&
+      schema.tagNumber !== tagInfo.tagNumber
+    ) {
+      return false;
+    }
+
+    return true;
+  }
 }
 
 /**
@@ -476,14 +751,18 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
+      defaultValue?: D;
     },
   ): PrimitiveTLVSchema<D> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
+    const { tagClass, tagNumber, optional, defaultValue } = options ?? {};
     return {
       name,
       decode,
       tagClass,
       tagNumber,
+      optional,
+      defaultValue,
     };
   }
 
@@ -500,14 +779,16 @@ export class Schema {
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
+      optional?: boolean;
     },
   ): ConstructedTLVSchema<F> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
+    const { tagClass, tagNumber, optional } = options ?? {};
     return {
       name,
       fields,
       tagClass,
       tagNumber,
+      optional,
     };
   }
 
@@ -535,6 +816,25 @@ export class Schema {
       tagClass,
       tagNumber,
       optional,
+    };
+  }
+
+  /**
+   * Creates a choice schema definition.
+   */
+  public static choice<
+    N extends string,
+    Options extends readonly ChoiceOption<TLVSchema>[],
+  >(
+    name: N,
+    optionsList: Options,
+    options?: { optional?: boolean },
+  ): ChoiceTLVSchema<Options> & { name: N } {
+    return {
+      name,
+      kind: "choice",
+      options: optionsList,
+      optional: options?.optional,
     };
   }
 }

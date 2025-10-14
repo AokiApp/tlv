@@ -28,6 +28,27 @@ export class BasicTLVParser {
   }
 
   /**
+   * Peek the tag information of the next TLV without consuming it.
+   * @param buffer - Buffer that begins with a TLV structure.
+   * @returns Tag information, or null when the buffer is empty.
+   */
+  public static peekTag(
+    buffer: ArrayBuffer,
+    offset = 0,
+  ):
+    | {
+        tag: { tagClass: TagClass; constructed: boolean; tagNumber: number };
+      }
+    | null {
+    if (offset >= buffer.byteLength) {
+      return null;
+    }
+    const view = new DataView(buffer);
+    const tagInfo = this.readTagInfo(view, offset);
+    return { tag: tagInfo.tag };
+  }
+
+  /**
    * Read the tag portion from the DataView and update the offset.
    * @param view - The DataView representing the TLV buffer.
    * @param offset - The current read position within the buffer.

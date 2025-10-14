@@ -402,6 +402,292 @@ describe("SchemaParser - Schema-based parsing functionality", () => {
       expect(() => parser.parse(emptyBuffer)).toThrow();
     });
   });
+
+  describe("Optional fields", () => {
+    test("should ignore missing optional primitive fields", () => {
+      const nicknameSchema = Schema.primitive(
+        "nickname",
+        Decoders.string,
+        {
+          ...CommonTags.CONTEXT_SPECIFIC_0,
+          optional: true,
+        },
+      );
+      const nameSchema = Schema.primitive(
+        "name",
+        Decoders.string,
+        CommonTags.UTF8_STRING,
+      );
+      const ageSchema = Schema.primitive(
+        "age",
+        Decoders.singleByte,
+        CommonTags.INTEGER,
+      );
+      const personSchema = Schema.constructed(
+        "person",
+        [nicknameSchema, nameSchema, ageSchema],
+        CommonTags.SEQUENCE,
+      );
+
+      const nameField = TestData.createTlvBuffer(
+        0x0c,
+        TestData.createStringBuffer("Alice"),
+      );
+      const ageField = TestData.createTlvBuffer(
+        0x02,
+        TestData.createBuffer([30]),
+      );
+      const sequenceBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        nameField,
+        ageField,
+      ]);
+
+      const parser = new SchemaParser(personSchema);
+      const result = parser.parse(sequenceBuffer) as {
+        nickname?: string;
+        name: string;
+        age: number;
+      };
+
+      expect(result.nickname).toBeUndefined();
+      expect(result.name).toBe("Alice");
+      expect(result.age).toBe(30);
+    });
+
+    test("should parse optional primitive when present", () => {
+      const nicknameSchema = Schema.primitive(
+        "nickname",
+        Decoders.string,
+        {
+          ...CommonTags.CONTEXT_SPECIFIC_0,
+          optional: true,
+        },
+      );
+      const nameSchema = Schema.primitive(
+        "name",
+        Decoders.string,
+        CommonTags.UTF8_STRING,
+      );
+      const ageSchema = Schema.primitive(
+        "age",
+        Decoders.singleByte,
+        CommonTags.INTEGER,
+      );
+      const personSchema = Schema.constructed(
+        "person",
+        [nicknameSchema, nameSchema, ageSchema],
+        CommonTags.SEQUENCE,
+      );
+
+      const nicknameField = TestData.createTlvBuffer(
+        0x80,
+        TestData.createStringBuffer("Al"),
+      );
+      const nameField = TestData.createTlvBuffer(
+        0x0c,
+        TestData.createStringBuffer("Alice"),
+      );
+      const ageField = TestData.createTlvBuffer(
+        0x02,
+        TestData.createBuffer([30]),
+      );
+      const sequenceBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        nicknameField,
+        nameField,
+        ageField,
+      ]);
+
+      const parser = new SchemaParser(personSchema);
+      const result = parser.parse(sequenceBuffer) as {
+        nickname?: string;
+        name: string;
+        age: number;
+      };
+
+      expect(result.nickname).toBe("Al");
+      expect(result.name).toBe("Alice");
+      expect(result.age).toBe(30);
+    });
+  });
+
+  describe("Default values", () => {
+    test("should use default when field is omitted", () => {
+      const statusSchema = Schema.primitive(
+        "status",
+        Decoders.integer,
+        {
+          tagClass: TagClass.ContextSpecific,
+          tagNumber: 0,
+          defaultValue: 0,
+        },
+      );
+      const amountSchema = Schema.primitive(
+        "amount",
+        Decoders.integer,
+        CommonTags.INTEGER,
+      );
+      const paymentSchema = Schema.constructed(
+        "payment",
+        [statusSchema, amountSchema],
+        CommonTags.SEQUENCE,
+      );
+
+      const amountField = TestData.createTlvBuffer(
+        0x02,
+        TestData.createBuffer([0x01]),
+      );
+      const sequenceBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        amountField,
+      ]);
+
+      const parser = new SchemaParser(paymentSchema);
+      const result = parser.parse(sequenceBuffer) as {
+        status: number;
+        amount: number;
+      };
+
+      expect(result.status).toBe(0);
+      expect(result.amount).toBe(1);
+    });
+
+    test("should override default when value present", () => {
+      const statusSchema = Schema.primitive(
+        "status",
+        Decoders.integer,
+        {
+          tagClass: TagClass.ContextSpecific,
+          tagNumber: 0,
+          defaultValue: 0,
+        },
+      );
+      const amountSchema = Schema.primitive(
+        "amount",
+        Decoders.integer,
+        CommonTags.INTEGER,
+      );
+      const paymentSchema = Schema.constructed(
+        "payment",
+        [statusSchema, amountSchema],
+        CommonTags.SEQUENCE,
+      );
+
+      const statusField = TestData.createTlvBuffer(
+        0x80,
+        TestData.createBuffer([0x02]),
+      );
+      const amountField = TestData.createTlvBuffer(
+        0x02,
+        TestData.createBuffer([0x05]),
+      );
+      const sequenceBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        statusField,
+        amountField,
+      ]);
+
+      const parser = new SchemaParser(paymentSchema);
+      const result = parser.parse(sequenceBuffer) as {
+        status: number;
+        amount: number;
+      };
+
+      expect(result.status).toBe(2);
+      expect(result.amount).toBe(5);
+    });
+  });
+
+  describe("Choice schemas", () => {
+    test("should parse primitive choice option", () => {
+      const contactChoice = Schema.choice("contact", [
+        {
+          name: "email",
+          schema: Schema.primitive(
+            "email",
+            Decoders.string,
+            CommonTags.UTF8_STRING,
+          ),
+        },
+        {
+          name: "phone",
+          schema: Schema.primitive(
+            "phone",
+            Decoders.string,
+            {
+              tagClass: TagClass.ContextSpecific,
+              tagNumber: 0,
+            },
+          ),
+        },
+      ]);
+
+      const personSchema = Schema.constructed(
+        "person",
+        [contactChoice],
+        CommonTags.SEQUENCE,
+      );
+
+      const emailField = TestData.createTlvBuffer(
+        0x0c,
+        TestData.createStringBuffer("alice@example.com"),
+      );
+      const personBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        emailField,
+      ]);
+
+      const parser = new SchemaParser(personSchema);
+      const result = parser.parse(personBuffer) as {
+        contact: { type: string; value: unknown };
+      };
+
+      expect(result.contact.type).toBe("email");
+      expect(result.contact.value).toBe("alice@example.com");
+    });
+
+    test("should parse context-specific choice option", () => {
+      const contactChoice = Schema.choice("contact", [
+        {
+          name: "email",
+          schema: Schema.primitive(
+            "email",
+            Decoders.string,
+            CommonTags.UTF8_STRING,
+          ),
+        },
+        {
+          name: "phone",
+          schema: Schema.primitive(
+            "phone",
+            Decoders.string,
+            {
+              tagClass: TagClass.ContextSpecific,
+              tagNumber: 0,
+            },
+          ),
+        },
+      ]);
+
+      const personSchema = Schema.constructed(
+        "person",
+        [contactChoice],
+        CommonTags.SEQUENCE,
+      );
+
+      const phoneField = TestData.createTlvBuffer(
+        0x80,
+        TestData.createStringBuffer("12345"),
+      );
+      const personBuffer = TestData.createConstructedTlvBuffer(0x30, [
+        phoneField,
+      ]);
+
+      const parser = new SchemaParser(personSchema);
+      const result = parser.parse(personBuffer) as {
+        contact: { type: string; value: unknown };
+      };
+
+      expect(result.contact.type).toBe("phone");
+      expect(result.contact.value).toBe("12345");
+    });
+  });
 });
 
 test("should accept any SET order when strict: false", () => {
