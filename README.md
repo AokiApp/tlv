@@ -115,10 +115,13 @@ Parse TLV data based on a schema.
 [`Schema.primitive<N, D>(name: N, options): TLVSchema`](src/parser/schema-parser.ts:339)  
 [`Schema.constructed<N, F>(name: N, fields: F, options?): TLVSchema`](src/parser/schema-parser.ts:363)  
 [`Schema.repeated<N>(name: N, item: TLVSchema, options?): TLVSchema`](src/parser/schema-parser.ts:485)  
+[`Schema.choice<N>(name: N, options, config?): TLVSchema`](src/parser/schema-parser.ts:825)  
 Helpers for building schema objects.
 
 > `Schema.repeated` defaults to Universal tag number 16 (DER SEQUENCE OF semantics).  
 > Supply `options.tagNumber = 17` when you need DER SET OF behavior; strict mode will then enforce DER lexicographic ordering.
+>
+> `Schema.primitive` accepts `optional: boolean` to mark absent fields, and `defaultValue` so missing values materialise as defaults. `Schema.choice` lets you describe ASN.1 `CHOICE` constructs: the parser picks the first option whose tag matches the encoded value, returning `{ type, value }`.
 
 ### Builder
 
@@ -133,6 +136,7 @@ Build DER-encoded TLV from a TLVResult.
 Build TLV data based on a schema.
 
 [`Schema.repeated<N>(name: N, item: TLVSchema, options?)`](src/builder/schema-builder.ts:561) mirrors the parser helper above: omit `tagNumber` for SEQUENCE OF, or set it to 17 for SET OF with DER ordering when strict.
+`Schema.choice` and the `optional` / `defaultValue` flags are also available on the builder side, so builders can omit absent/defaulted values and select variants by supplying `{ type, value }`.
 
 ### Common Types
 
@@ -180,6 +184,60 @@ const buffer = /* TLV-encoded ArrayBuffer for person */;
 const parser = new SchemaParser(personSchema);
 const parsed = parser.parseSync(buffer); // Or await parser.parseAsync(buffer)
 console.log(parsed); // { age: 30, name: "Alice" }
+```
+
+### Optional, Default, and Choice Fields
+
+```typescript
+import { SchemaParser, Schema, TagClass } from "@aokiapp/tlv/parser";
+
+const personSchema = Schema.constructed(
+  "person",
+  [
+    // Optional nickname on [0] IMPLICIT UTF8String
+    Schema.primitive("nickname", (buf) => new TextDecoder().decode(buf), {
+      tagClass: TagClass.ContextSpecific,
+      tagNumber: 0,
+      optional: true,
+    }),
+    // Status defaults to 0 when omitted
+    Schema.primitive("status", (buf) => new DataView(buf).getUint8(0), {
+      tagClass: TagClass.ContextSpecific,
+      tagNumber: 1,
+      defaultValue: 0,
+    }),
+    // Contact can be either an email or phone number
+    Schema.choice("contact", [
+      {
+        name: "email",
+        schema: Schema.primitive(
+          "email",
+          (buf) => new TextDecoder().decode(buf),
+          { tagNumber: 12 },
+        ),
+      },
+      {
+        name: "phone",
+        schema: Schema.primitive(
+          "phone",
+          (buf) => new TextDecoder().decode(buf),
+          {
+            tagClass: TagClass.ContextSpecific,
+            tagNumber: 0,
+          },
+        ),
+      },
+    ]),
+  ],
+  { tagClass: TagClass.Universal, tagNumber: 16 },
+);
+
+const parser = new SchemaParser(personSchema);
+const parsed = parser.parseSync(/* TLV buffer */);
+
+// parsed.nickname may be undefined when absent
+// parsed.status defaults to 0 when missing
+// parsed.contact is { type: "email" | "phone", value: string }
 ```
 
 ### Building Primitive TLV
