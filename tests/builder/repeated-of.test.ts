@@ -3,14 +3,13 @@ import { SchemaBuilder, Schema, TagClass } from "../../src/builder";
 import { Schema as ParserSchema, SchemaParser } from "../../src/parser";
 import { Encoders } from "./test-helpers";
 
-describe("Schema.sequenceOf() and Schema.setOf() - of-type encoding", () => {
-  test("sequenceOf UTF8String roundtrip", () => {
-    // Schema: SEQUENCE OF UTF8String
+describe("Schema.repeated() - SEQUENCE/SET semantics via tagNumber", () => {
+  test("repeated UTF8String defaults to SEQUENCE OF semantics", () => {
     const item = Schema.primitive<string, string>("item", Encoders.string, {
       tagClass: TagClass.Universal,
       tagNumber: 12, // UTF8String
     });
-    const seqSchema = Schema.sequenceOf("items", item);
+    const seqSchema = Schema.repeated("items", item);
 
     const builder = new SchemaBuilder(seqSchema);
     const encoded = builder.build(["alpha", "beta"]);
@@ -28,20 +27,19 @@ describe("Schema.sequenceOf() and Schema.setOf() - of-type encoding", () => {
         tagNumber: 12,
       },
     );
-    const parseSeqSchema = ParserSchema.sequenceOf("items", parseItem);
+    const parseSeqSchema = ParserSchema.repeated("items", parseItem);
 
     const sp = new SchemaParser(parseSeqSchema);
     const decoded = sp.parse(encoded);
     expect(decoded).toEqual(["alpha", "beta"]);
   });
 
-  test("setOf UTF8String sorts elements by DER lexicographic order under strict mode", () => {
-    // SET OF UTF8String
+  test("repeated UTF8String with tagNumber 17 enforces DER SET OF sorting under strict mode", () => {
     const item = Schema.primitive<string, string>("item", Encoders.string, {
       tagClass: TagClass.Universal,
       tagNumber: 12, // UTF8String
     });
-    const setSchema = Schema.setOf("items", item);
+    const setSchema = Schema.repeated("items", item, { tagNumber: 17 });
 
     const builder = new SchemaBuilder(setSchema, { strict: true });
     const encoded = builder.build(["beta", "alpha"]);
@@ -59,7 +57,9 @@ describe("Schema.sequenceOf() and Schema.setOf() - of-type encoding", () => {
         tagNumber: 12,
       },
     );
-    const parseSetSchema = ParserSchema.setOf("items", parseItem);
+    const parseSetSchema = ParserSchema.repeated("items", parseItem, {
+      tagNumber: 17,
+    });
 
     const sp = new SchemaParser(parseSetSchema, { strict: true });
     const decoded = sp.parse(encoded);

@@ -150,14 +150,14 @@ const SignedData_B = BuilderSchema.constructed(
       tagClass: TagClass.Universal,
       tagNumber: 2,
     }),
-    // digestAlgorithms SEQUENCE OF AlgorithmIdentifier (demo-friendly; library also supports SET OF)
-    BuilderSchema.sequenceOf("digestAlgorithms", AlgorithmIdentifier_B, {
+    // digestAlgorithms SEQUENCE OF AlgorithmIdentifier (demo-friendly; library also supports SET semantics via tagNumber 17)
+    BuilderSchema.repeated("digestAlgorithms", AlgorithmIdentifier_B, {
       tagClass: TagClass.Universal,
       tagNumber: 16,
     }),
     EncapsulatedContentInfo_B,
     // signerInfos SEQUENCE OF SignerInfo (demo-friendly; library also supports SET OF)
-    BuilderSchema.sequenceOf("signerInfos", SignerInfo_B, {
+    BuilderSchema.repeated("signerInfos", SignerInfo_B, {
       tagClass: TagClass.Universal,
       tagNumber: 16,
     }),
@@ -281,12 +281,12 @@ const SignedData_P = ParserSchema.constructed(
       tagClass: TagClass.Universal,
       tagNumber: 2,
     }),
-    ParserSchema.sequenceOf("digestAlgorithms", AlgorithmIdentifier_P, {
+    ParserSchema.repeated("digestAlgorithms", AlgorithmIdentifier_P, {
       tagClass: TagClass.Universal,
       tagNumber: 16,
     }),
     EncapsulatedContentInfo_P,
-    ParserSchema.sequenceOf("signerInfos", SignerInfo_P, {
+    ParserSchema.repeated("signerInfos", SignerInfo_P, {
       tagClass: TagClass.Universal,
       tagNumber: 16,
     }),

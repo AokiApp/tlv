@@ -139,9 +139,11 @@ const AttributeTypeAndValue = Schema.constructed(
   { tagNumber: 16 }, // SEQUENCE
 );
 
-const RelativeDistinguishedName = Schema.setOf("rdn", AttributeTypeAndValue);
+const RelativeDistinguishedName = Schema.repeated("rdn", AttributeTypeAndValue, {
+  tagNumber: 17,
+});
 
-const NameSequence = Schema.sequenceOf("name", RelativeDistinguishedName);
+const NameSequence = Schema.repeated("name", RelativeDistinguishedName);
 
 // GeneralName [4] containing Name (could be empty in header)
 const GeneralNameEmpty = Schema.constructed(
@@ -290,7 +292,7 @@ const CertReqMsg = Schema.constructed(
 );
 
 // CertReqMessages ::= SEQUENCE OF CertReqMsg (observed single entry)
-const CertReqMessages = Schema.sequenceOf("certReq", CertReqMsg);
+const CertReqMessages = Schema.repeated("certReq", CertReqMsg);
 
 // PKIBody [0]
 const BodySchema = Schema.constructed("body", [CertReqMessages], {

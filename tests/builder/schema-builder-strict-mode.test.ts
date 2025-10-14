@@ -80,7 +80,7 @@ describe("SchemaBuilder strict mode consistency", () => {
       tagClass: TagClass.Universal,
       tagNumber: 12,
     });
-    const setSchema = Schema.setOf("items", item);
+    const setSchema = Schema.repeated("items", item, { tagNumber: 17 });
     const builder = new SchemaBuilder(setSchema, { strict: true });
     const encoded = await builder.build(["alpha", "beta"], { async: true });
     expect(new Uint8Array(encoded)[0]).toBe(0x31);
@@ -92,7 +92,7 @@ describe("SchemaBuilder strict mode consistency", () => {
       tagClass: TagClass.Universal,
       tagNumber: 12,
     });
-    const setSchema = Schema.setOf("items", item);
+    const setSchema = Schema.repeated("items", item, { tagNumber: 17 });
     const builder = new SchemaBuilder(setSchema, { strict: false });
     const encoded = await builder.build(["alpha", "beta"], { async: true });
     expect(new Uint8Array(encoded)[0]).toBe(0x31);
