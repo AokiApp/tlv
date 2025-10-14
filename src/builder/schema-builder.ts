@@ -35,7 +35,7 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
-  readonly kind: "sequenceOf" | "setOf";
+  readonly kind: "repeated";
   readonly optional?: boolean;
 }
 
@@ -72,8 +72,7 @@ function isConstructedSchema<F extends readonly TLVSchema[]>(
 
 function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
   return (
-    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
-    (schema as RepeatedTLVSchema).kind === "setOf"
+    (schema as RepeatedTLVSchema).kind === "repeated"
   );
 }
 
@@ -86,7 +85,7 @@ function isPrimitiveSchema(
 // Module-level helpers for DER ordering and lexicographic comparison
 function encodeTag(field: TLVSchema): Uint8Array {
   const tagClass = field.tagClass ?? TagClass.Universal;
-  const tagNumber = field.tagNumber ?? 0;
+  const tagNumber = field.tagNumber ?? (isRepeatedSchema(field) ? 16 : 0);
   const constructed =
     isConstructedSchema(field) || isRepeatedSchema(field) ? 0x20 : 0x00;
   const bytes: number[] = [];
@@ -214,11 +213,14 @@ export class SchemaBuilder<S extends TLVSchema> {
   ): ArrayBuffer {
     if (isRepeatedSchema(schema)) {
       const items = (data as Array<BuildData<typeof schema.item>>) ?? [];
+      const tagNumber = schema.tagNumber ?? 16;
+      const tagClass = schema.tagClass ?? TagClass.Universal;
+      const enforceDERSetOrdering = this.strict && tagNumber === 17;
       let childBuffers = items.map((itemData) =>
         this.buildWithSchemaSync(schema.item, itemData),
       );
 
-      if (schema.kind === "setOf" && this.strict) {
+      if (enforceDERSetOrdering) {
         childBuffers = childBuffers.slice().sort((a, b) => {
           const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
           const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
@@ -246,8 +248,8 @@ export class SchemaBuilder<S extends TLVSchema> {
 
       return BasicTLVBuilder.build({
         tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
+          tagClass,
+          tagNumber,
           constructed: true,
         },
         length: childrenData.byteLength,
@@ -354,12 +356,15 @@ export class SchemaBuilder<S extends TLVSchema> {
   ): Promise<ArrayBuffer> {
     if (isRepeatedSchema(schema)) {
       const items = (data as Array<BuildData<typeof schema.item>>) ?? [];
+      const tagNumber = schema.tagNumber ?? 16;
+      const tagClass = schema.tagClass ?? TagClass.Universal;
+      const enforceDERSetOrdering = this.strict && tagNumber === 17;
       let childBuffers = await Promise.all(
         items.map((itemData) =>
           this.buildWithSchemaAsync(schema.item, itemData),
         ),
       );
-      if (schema.kind === "setOf" && this.strict) {
+      if (enforceDERSetOrdering) {
         childBuffers = childBuffers.slice().sort((a, b) => {
           const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
           const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
@@ -380,8 +385,8 @@ export class SchemaBuilder<S extends TLVSchema> {
 
       return BasicTLVBuilder.build({
         tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
+          tagClass,
+          tagNumber,
           constructed: true,
         },
         length: childrenData.byteLength,
@@ -547,9 +552,13 @@ export class Schema {
   }
 
   /**
-   * Creates a SEQUENCE OF schema definition.
+   * Creates a repeated TLV schema definition.
+   * @param name - The name of the field.
+   * @param item - Schema definition for the repeated element.
+   * @param options - Optional tag class, tag number, optional flag.
+   * @returns A repeated TLV schema object.
    */
-  public static sequenceOf<N extends string>(
+  public static repeated<N extends string>(
     name: N,
     item: TLVSchema,
     options?: {
@@ -558,34 +567,15 @@ export class Schema {
       optional?: boolean;
     },
   ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "sequenceOf",
+    const {
       tagClass,
       tagNumber,
       optional,
-    };
-  }
-
-  /**
-   * Creates a SET OF schema definition.
-   */
-  public static setOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
+    } = options ?? {};
     return {
       name,
       item,
-      kind: "setOf",
+      kind: "repeated",
       tagClass,
       tagNumber,
       optional,

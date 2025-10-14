@@ -36,7 +36,7 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
-  readonly kind: "sequenceOf" | "setOf";
+  readonly kind: "repeated";
   readonly optional?: boolean;
 }
 
@@ -73,8 +73,7 @@ function isConstructedSchema(
 }
 function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
   return (
-    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
-    (schema as RepeatedTLVSchema).kind === "setOf"
+    (schema as RepeatedTLVSchema).kind === "repeated"
   );
 }
 
@@ -185,6 +184,8 @@ export class SchemaParser<S extends TLVSchema> {
     if (isRepeatedSchema(schema)) {
       let subOffset = 0;
       const results = [] as Array<ParsedResult<typeof schema.item>>;
+      const tagNumber = schema.tagNumber ?? 16;
+      const enforceDERSetOrdering = this.strict && tagNumber === 17;
       const encodedChildren: Uint8Array[] = [];
       while (subOffset < value.byteLength) {
         const childTLV = BasicTLVParser.parse(value.slice(subOffset));
@@ -209,7 +210,7 @@ export class SchemaParser<S extends TLVSchema> {
         );
       }
 
-      if (schema.kind === "setOf" && this.strict) {
+      if (enforceDERSetOrdering) {
         for (let i = 1; i < encodedChildren.length; i++) {
           const a = encodedChildren[i - 1];
           const b = encodedChildren[i];
@@ -344,8 +345,16 @@ export class SchemaParser<S extends TLVSchema> {
     if (isRepeatedSchema(schema)) {
       let subOffset = 0;
       const results = [] as Array<ParsedResult<typeof schema.item>>;
+      const tagNumber = schema.tagNumber ?? 16;
+      const enforceDERSetOrdering = this.strict && tagNumber === 17;
+      const encodedChildren: Uint8Array[] = [];
       while (subOffset < value.byteLength) {
         const childTLV = BasicTLVParser.parse(value.slice(subOffset));
+        encodedChildren.push(
+          new Uint8Array(
+            value.slice(subOffset, subOffset + childTLV.endOffset),
+          ),
+        );
         const fieldParser = new SchemaParser(schema.item, {
           strict: this.strict,
         });
@@ -360,6 +369,27 @@ export class SchemaParser<S extends TLVSchema> {
         throw new Error(
           "Constructed element does not end exactly at the expected length.",
         );
+      }
+
+      if (enforceDERSetOrdering) {
+        for (let i = 1; i < encodedChildren.length; i++) {
+          const a = encodedChildren[i - 1];
+          const b = encodedChildren[i];
+          const len = Math.min(a.length, b.length);
+          let cmp = 0;
+          for (let j = 0; j < len; j++) {
+            if (a[j] !== b[j]) {
+              cmp = a[j] < b[j] ? -1 : 1;
+              break;
+            }
+          }
+          if (cmp === 0) {
+            cmp = a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
+          }
+          if (cmp > 0) {
+            throw new Error("SET elements are not in DER lexicographic order.");
+          }
+        }
       }
 
       return results as ParsedResult<T>;
@@ -482,9 +512,9 @@ export class Schema {
   }
 
   /**
-   * Creates a SEQUENCE OF TLV parser schema.
+   * Creates a repeated TLV parser schema.
    */
-  public static sequenceOf<N extends string>(
+  public static repeated<N extends string>(
     name: N,
     item: TLVSchema,
     options?: {
@@ -493,34 +523,15 @@ export class Schema {
       optional?: boolean;
     },
   ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "sequenceOf",
+    const {
       tagClass,
       tagNumber,
       optional,
-    };
-  }
-
-  /**
-   * Creates a SET OF TLV parser schema.
-   */
-  public static setOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
+    } = options ?? {};
     return {
       name,
       item,
-      kind: "setOf",
+      kind: "repeated",
       tagClass,
       tagNumber,
       optional,

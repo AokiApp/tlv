@@ -114,7 +114,11 @@ Parse TLV data based on a schema.
 
 [`Schema.primitive<N, D>(name: N, options): TLVSchema`](src/parser/schema-parser.ts:339)  
 [`Schema.constructed<N, F>(name: N, fields: F, options?): TLVSchema`](src/parser/schema-parser.ts:363)  
+[`Schema.repeated<N>(name: N, item: TLVSchema, options?): TLVSchema`](src/parser/schema-parser.ts:485)  
 Helpers for building schema objects.
+
+> `Schema.repeated` defaults to Universal tag number 16 (DER SEQUENCE OF semantics).  
+> Supply `options.tagNumber = 17` when you need DER SET OF behavior; strict mode will then enforce DER lexicographic ordering.
 
 ### Builder
 
@@ -127,6 +131,8 @@ Build DER-encoded TLV from a TLVResult.
 
 [`SchemaBuilder.build(data: BuildData<S>, options?: { async?: boolean; strict?: boolean }): ArrayBuffer | Promise<ArrayBuffer>`](src/builder/schema-builder.ts:104)  
 Build TLV data based on a schema.
+
+[`Schema.repeated<N>(name: N, item: TLVSchema, options?)`](src/builder/schema-builder.ts:561) mirrors the parser helper above: omit `tagNumber` for SEQUENCE OF, or set it to 17 for SET OF with DER ordering when strict.
 
 ### Common Types
 
