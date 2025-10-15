@@ -131,6 +131,7 @@ export class SchemaBuilder<S extends TLVSchema> {
   /**
    * Constructs a SchemaBuilder for the specified schema.
    * @param schema - The TLV schema to use.
+   * @param options - Optional settings. If strict is true (default), DER/SET ordering is enforced.
    */
   constructor(schema: S, options?: { strict?: boolean }) {
     this.schema = schema;
@@ -140,22 +141,12 @@ export class SchemaBuilder<S extends TLVSchema> {
   /**
    * Builds data in synchronous mode.
    * @param data - The input data matching the schema structure.
-   * @param options - Optional strict mode override.
    * @returns Built TLV result.
    */
   public build(
     data: BuildData<S>,
-    options?: { strict?: boolean },
   ): ArrayBuffer {
-    const prevStrict = this.strict;
-    if (options?.strict !== undefined) {
-      this.strict = options.strict;
-    }
-    try {
-      return this.buildSync(data);
-    } finally {
-      this.strict = prevStrict;
-    }
+    return this.buildSync(data);
   }
 
   /**

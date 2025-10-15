@@ -102,22 +102,11 @@ export class SchemaParser<S extends TLVSchema> {
   /**
    * Parses data in synchronous mode.
    * @param buffer - The input data as an ArrayBuffer.
-   * @param options - Optional strict mode override.
    * @returns Parsed result matching the schema.
+   * Note: Strict mode is configured via the constructor only.
    */
-  public parse(
-    buffer: ArrayBuffer,
-    options?: { strict?: boolean },
-  ): ParsedResult<S> {
-    const prevStrict = this.strict;
-    if (options?.strict !== undefined) {
-      this.strict = options.strict;
-    }
-    try {
-      return this.parseSync(buffer);
-    } finally {
-      this.strict = prevStrict;
-    }
+  public parse(buffer: ArrayBuffer): ParsedResult<S> {
+    return this.parseSync(buffer);
   }
 
   /**
@@ -131,7 +120,6 @@ export class SchemaParser<S extends TLVSchema> {
     this.offset = 0;
     return this.parseWithSchemaSync(this.schema);
   }
-
 
   /**
    * Recursively parses data in synchronous mode.
@@ -371,5 +359,4 @@ export class Schema {
       tagNumber,
     };
   }
-
 }
