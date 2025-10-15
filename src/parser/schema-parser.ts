@@ -148,4 +148,13 @@ export declare class Schema {
     fields: F,
     options?: O,
   ): ConstructedTLVSchema<N, F> & OptionalFlag<O>;
+  static repeated<
+    N extends string,
+    Item extends TLVSchema,
+    O extends SchemaOptions | undefined = undefined,
+  >(
+    name: N,
+    item: Item,
+    options?: O,
+  ): RepeatedTLVSchema<N, Item> & OptionalFlag<O>;
 }
