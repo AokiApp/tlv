@@ -30,7 +30,7 @@ interface TLVSchemaBase<N extends string = string> {
  * Interface for defining a primitive TLV schema.
  * @template DecodedType - The type after decoding.
  */
-export interface PrimitiveTLVSchema<
+interface PrimitiveTLVSchema<
   N extends string = string,
   DecodedType = DefaultEncodeType,
 > extends TLVSchemaBase<N> {
@@ -44,7 +44,7 @@ export interface PrimitiveTLVSchema<
  * Interface for defining a constructed TLV schema.
  * @template F - The array of child field schemas.
  */
-export interface ConstructedTLVSchema<
+interface ConstructedTLVSchema<
   N extends string = string,
   F extends readonly TLVSchema[] = readonly TLVSchema[],
 > extends TLVSchemaBase<N> {
@@ -59,7 +59,7 @@ interface RepeatedTLVSchema<
   readonly item: Item;
 }
 
-export type TLVSchema<N extends string = string> =
+type TLVSchema<N extends string = string> =
   | PrimitiveTLVSchema<N, unknown>
   | ConstructedTLVSchema<N, readonly TLVSchema[]>
   | RepeatedTLVSchema<N, TLVSchema>;
@@ -103,7 +103,7 @@ type ParsedRepeated<Item extends TLVSchema> = Array<ParsedResult<Item>>;
  * Maps a schema to its parse-time data shape.
  * Broken down into aliases above for readability and tooling friendliness.
  */
-export type ParsedResult<S extends TLVSchema> =
+type ParsedResult<S extends TLVSchema> =
   S extends ConstructedTLVSchema<string, infer F>
     ? ParsedConstructedFields<F>
     : S extends PrimitiveTLVSchema<string, infer DecodedType>
