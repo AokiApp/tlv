@@ -88,11 +88,11 @@ export type BuildData<S extends TLVSchema> = S extends { optional: true }
 type ChoiceBuild<
   Options extends readonly ChoiceOption<TLVSchema>[],
 > = {
-  [Option in Options[number]]: {
+  [Option in Options[number] as Option["name"]]: {
     type: Option["name"];
     value: BuildData<Option["schema"]>;
   };
-}[Options[number]];
+}[Options[number]["name"]];
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -287,7 +287,7 @@ export class SchemaBuilder<S extends TLVSchema> {
    * @returns A Promise of built TLV result.
    */
   public async buildAsync(data: BuildData<S>): Promise<ArrayBuffer> {
-    return await this.buildWithSchemaAsync(this.schema, data);
+    return this.buildWithSchemaAsync(this.schema, data);
   }
 
   /**
@@ -305,46 +305,17 @@ export class SchemaBuilder<S extends TLVSchema> {
       const tagNumber = schema.tagNumber ?? 16;
       const tagClass = schema.tagClass ?? TagClass.Universal;
       const enforceDERSetOrdering = this.strict && tagNumber === 17;
-      let childBuffers = items.map((itemData) =>
+      const childBuffers = items.map((itemData) =>
         this.buildWithSchemaSync(schema.item, itemData),
       );
 
-      if (enforceDERSetOrdering) {
-        childBuffers = childBuffers.slice().sort((a, b) => {
-          const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
-          const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          const len = Math.min(ua.length, ub.length);
-          for (let i = 0; i < len; i++) {
-            if (ua[i] !== ub[i]) return ua[i] < ub[i] ? -1 : 1;
-          }
-          if (ua.length !== ub.length) return ua.length < ub.length ? -1 : 1;
-          return 0;
-        });
-      }
-
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
+      const orderedBuffers = this.orderChildBuffers(
+        childBuffers,
+        enforceDERSetOrdering,
       );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        const bufView =
-          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-        childrenData.set(bufView, offset);
-        offset += bufView.byteLength;
-      }
+      const childrenData = this.concatBuffers(orderedBuffers);
 
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass,
-          tagNumber,
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
+      return this.buildConstructedTLV(tagClass, tagNumber, childrenData);
     }
 
     if (isChoiceSchema(schema)) {
@@ -375,75 +346,27 @@ export class SchemaBuilder<S extends TLVSchema> {
     }
 
     if (isConstructedSchema(schema)) {
-      let fieldsToProcess = [...schema.fields];
-
-      // For SET, sort fields by tag as required by DER strict mode
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          return lexCompare(encodeTag(a), encodeTag(b));
-        });
-      }
+      const fieldsToProcess = this.prepareConstructedFields(schema);
+      const container = data as Record<string, unknown>;
 
       const childrenBuffers: ArrayBuffer[] = [];
       for (const fieldSchema of fieldsToProcess) {
-        const fieldName = fieldSchema.name;
-        const fieldData = (data as Record<string, unknown>)[fieldName];
-        const defaultEnabled = hasDefaultValue(fieldSchema);
-
-        if (fieldData === undefined) {
-          if (defaultEnabled) {
-            continue;
-          }
-          if (fieldSchema.optional) {
-            continue;
-          }
-          throw new Error(`Missing required field: ${fieldName}`);
-        }
-
-        if (
-          defaultEnabled &&
-          valuesEqual(fieldData, fieldSchema.defaultValue)
-        ) {
+        const decision = this.resolveFieldDataForBuild(fieldSchema, container);
+        if (decision.decision === "skip") {
           continue;
         }
-
         childrenBuffers.push(
-          this.buildWithSchemaSync(
-            fieldSchema,
-            fieldData as BuildData<typeof fieldSchema>,
-          ),
+          this.buildWithSchemaSync(fieldSchema, decision.value),
         );
       }
 
-      // Avoid unnecessary ArrayBuffer copies
-      const totalLength = childrenBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
-      );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childrenBuffers) {
-        const bufView =
-          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-        childrenData.set(bufView, offset);
-        offset += bufView.byteLength;
-      }
+      const childrenData = this.concatBuffers(childrenBuffers);
 
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? 16, // Default to SEQUENCE for constructed
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
+      return this.buildConstructedTLV(
+        schema.tagClass ?? TagClass.Universal,
+        schema.tagNumber ?? 16,
+        childrenData,
+      );
     } else {
       // PrimitiveTLVSchema
       let value: ArrayBuffer;
@@ -492,40 +415,19 @@ export class SchemaBuilder<S extends TLVSchema> {
       const tagNumber = schema.tagNumber ?? 16;
       const tagClass = schema.tagClass ?? TagClass.Universal;
       const enforceDERSetOrdering = this.strict && tagNumber === 17;
-      let childBuffers = await Promise.all(
+      const childBuffers = await Promise.all(
         items.map((itemData) =>
           this.buildWithSchemaAsync(schema.item, itemData),
         ),
       );
-      if (enforceDERSetOrdering) {
-        childBuffers = childBuffers.slice().sort((a, b) => {
-          const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
-          const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          return lexCompare(ua, ub);
-        });
-      }
 
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
+      const orderedBuffers = this.orderChildBuffers(
+        childBuffers,
+        enforceDERSetOrdering,
       );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        childrenData.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
-      }
+      const childrenData = this.concatBuffers(orderedBuffers);
 
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass,
-          tagNumber,
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
+      return this.buildConstructedTLV(tagClass, tagNumber, childrenData);
     }
 
     if (isChoiceSchema(schema)) {
@@ -547,7 +449,7 @@ export class SchemaBuilder<S extends TLVSchema> {
           `Invalid choice selection for '${schema.name}': ${(choiceData as { type?: string }).type ?? "undefined"}`,
         );
       }
-      return await this.buildWithSchemaAsync(
+      return this.buildWithSchemaAsync(
         option.schema,
         (choiceData as { value: unknown }).value as BuildData<
           (typeof option)["schema"]
@@ -556,74 +458,26 @@ export class SchemaBuilder<S extends TLVSchema> {
     }
 
     if (isConstructedSchema(schema)) {
-      let fieldsToProcess = [...schema.fields];
-
-      // For SET, sort fields by tag as required by DER strict mode
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          return lexCompare(encodeTag(a), encodeTag(b));
-        });
-      }
+      const fieldsToProcess = this.prepareConstructedFields(schema);
+      const container = data as Record<string, unknown>;
 
       const buildTasks: Promise<ArrayBuffer>[] = [];
       for (const fieldSchema of fieldsToProcess) {
-        const fieldName = fieldSchema.name;
-        const fieldData = (data as Record<string, unknown>)[fieldName];
-        const defaultEnabled = hasDefaultValue(fieldSchema);
-
-        if (fieldData === undefined) {
-          if (defaultEnabled) {
-            continue;
-          }
-          if (fieldSchema.optional) {
-            continue;
-          }
-          throw new Error(`Missing required field: ${fieldName}`);
-        }
-
-        if (
-          defaultEnabled &&
-          valuesEqual(fieldData, fieldSchema.defaultValue)
-        ) {
+        const decision = this.resolveFieldDataForBuild(fieldSchema, container);
+        if (decision.decision === "skip") {
           continue;
         }
-
-        buildTasks.push(
-          this.buildWithSchemaAsync(
-            fieldSchema,
-            fieldData as BuildData<typeof fieldSchema>,
-          ),
-        );
+        buildTasks.push(this.buildWithSchemaAsync(fieldSchema, decision.value));
       }
 
       const childBuffers = await Promise.all(buildTasks);
+      const childrenData = this.concatBuffers(childBuffers);
 
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
+      return this.buildConstructedTLV(
+        schema.tagClass ?? TagClass.Universal,
+        schema.tagNumber ?? 16,
+        childrenData,
       );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        childrenData.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? 16, // Default to SEQUENCE for constructed
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
     }
 
     // PrimitiveTLVSchema
@@ -651,6 +505,119 @@ export class SchemaBuilder<S extends TLVSchema> {
       },
       length: value.byteLength,
       value: value,
+      endOffset: 0,
+    });
+  }
+
+  /**
+   * Returns a copy of the constructed schema's fields, applying DER sorting when strict mode demands.
+   */
+  private prepareConstructedFields<F extends readonly TLVSchema[]>(
+    schema: ConstructedTLVSchema<F>,
+  ): TLVSchema[] {
+    // Clone the field list so strict SET ordering can be applied without side effects.
+    const fields = [...schema.fields];
+    if (
+      this.strict &&
+      schema.tagNumber === 17 &&
+      (schema.tagClass === TagClass.Universal || schema.tagClass === undefined)
+    ) {
+      fields.sort((a, b) => lexCompare(encodeTag(a), encodeTag(b)));
+    }
+    return fields;
+  }
+
+  /**
+   * Decides whether a field should be emitted, based on optionality/default semantics, and returns its value.
+   */
+  private resolveFieldDataForBuild<T extends TLVSchema>(
+    fieldSchema: T,
+    container: Record<string, unknown>,
+  ):
+    | { decision: "skip" }
+    | { decision: "build"; value: BuildData<T> } {
+    // Mirror parser semantics: skip optional/defaulted values so sync/async match byte output.
+    const fieldData = container[fieldSchema.name];
+    if (fieldData === undefined) {
+      if (hasDefaultValue(fieldSchema) || fieldSchema.optional) {
+        return { decision: "skip" };
+      }
+      throw new Error(`Missing required field: ${fieldSchema.name}`);
+    }
+
+    if (
+      hasDefaultValue(fieldSchema) &&
+      valuesEqual(fieldData, fieldSchema.defaultValue)
+    ) {
+      return { decision: "skip" };
+    }
+
+    return {
+      decision: "build",
+      value: fieldData as BuildData<T>,
+    };
+  }
+
+  /**
+   * Returns child buffers optionally sorted for DER SET ordering, without mutating the original input.
+   */
+  private orderChildBuffers(
+    buffers: readonly ArrayBuffer[],
+    enforceOrdering: boolean,
+  ): ArrayBuffer[] {
+    // Avoid mutating input while still enforcing DER lexicographic order when required.
+    if (!enforceOrdering || buffers.length < 2) {
+      return [...buffers];
+    }
+
+    return buffers
+      .map((buffer) => ({
+        buffer,
+        bytes: new Uint8Array(buffer),
+      }))
+      .sort((a, b) => lexCompare(a.bytes, b.bytes))
+      .map((entry) => entry.buffer);
+  }
+
+  /**
+   * Concatenates a list of ArrayBuffers into a single Uint8Array without intermediate copies.
+   */
+  private concatBuffers(buffers: readonly ArrayBuffer[]): Uint8Array {
+    if (buffers.length === 0) {
+      return new Uint8Array(0);
+    }
+    const totalLength = buffers.reduce(
+      (sum, buf) => sum + buf.byteLength,
+      0,
+    );
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const buffer of buffers) {
+      const view = new Uint8Array(buffer);
+      // Single allocation concatenation keeps behaviour identical across sync/async.
+      combined.set(view, offset);
+      offset += view.byteLength;
+    }
+    return combined;
+  }
+
+  /**
+   * Builds a constructed TLV node with the provided encoded child content.
+   */
+  private buildConstructedTLV(
+    tagClass: TagClass,
+    tagNumber: number,
+    childrenData: Uint8Array,
+  ): ArrayBuffer {
+    // Centralised TLV builder call keeps tag handling consistent across call sites.
+    return BasicTLVBuilder.build({
+      tag: {
+        tagClass,
+        tagNumber,
+        constructed: true,
+      },
+      length: childrenData.byteLength,
+      value: childrenData.buffer as ArrayBuffer,
       endOffset: 0,
     });
   }

@@ -83,11 +83,11 @@ type ParsedResult<S extends TLVSchema> = S extends { optional: true }
 type ChoiceParsed<
   Options extends readonly ChoiceOption<TLVSchema>[],
 > = {
-  [Option in Options[number]]: {
+  [Option in Options[number] as Option["name"]]: {
     type: Option["name"];
     value: ParsedResult<Option["schema"]>;
   };
-}[Options[number]];
+}[Options[number]["name"]];
 
 /**
  * Checks if a given schema is a constructed schema.
@@ -120,6 +120,55 @@ function isChoiceSchema(
   schema: TLVSchema,
 ): schema is ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]> {
   return (schema as ChoiceTLVSchema<readonly ChoiceOption<TLVSchema>[]>).kind === "choice";
+}
+
+/**
+ * Encodes a schema's tag into bytes so parser ordering logic matches builder semantics.
+ */
+function encodeTag(field: TLVSchema): Uint8Array {
+  if (isChoiceSchema(field)) {
+    const candidateTags = field.options
+      .map((option) => encodeTag(option.schema))
+      .filter((bytes) => bytes.length > 0)
+      .sort(lexCompare);
+    return candidateTags[0] ?? new Uint8Array();
+  }
+  const tagClass = field.tagClass ?? TagClass.Universal;
+  const tagNumber = field.tagNumber ?? (isRepeatedSchema(field) ? 16 : 0);
+  const constructed =
+    isConstructedSchema(field) || isRepeatedSchema(field) ? 0x20 : 0x00;
+  const bytes: number[] = [];
+  let firstByte = (tagClass << 6) | constructed;
+  if (tagNumber < 31) {
+    firstByte |= tagNumber;
+    bytes.push(firstByte);
+  } else {
+    firstByte |= 0x1f;
+    bytes.push(firstByte);
+    let num = tagNumber;
+    const tagNumBytes: number[] = [];
+    do {
+      tagNumBytes.unshift(num % 128);
+      num = Math.floor(num / 128);
+    } while (num > 0);
+    for (let i = 0; i < tagNumBytes.length - 1; i++) {
+      bytes.push(tagNumBytes[i] | 0x80);
+    }
+    bytes.push(tagNumBytes[tagNumBytes.length - 1]);
+  }
+  return new Uint8Array(bytes);
+}
+
+/**
+ * Compares two tag byte sequences lexicographically, as required by DER SET ordering.
+ */
+function lexCompare(a: Uint8Array, b: Uint8Array): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
+  return 0;
 }
 /**
  * A parser that parses TLV data based on a given schema (synchronous or asynchronous).
@@ -205,7 +254,7 @@ export class SchemaParser<S extends TLVSchema> {
     this.buffer = buffer;
     this.view = new DataView(buffer);
     this.offset = 0;
-    return await this.parseWithSchemaAsync(this.schema);
+    return this.parseWithSchemaAsync(this.schema);
   }
 
   /**
@@ -250,31 +299,10 @@ export class SchemaParser<S extends TLVSchema> {
         subOffset += childTLV.endOffset;
       }
 
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
+      this.assertConstructedLengthConsumed(subOffset, value.byteLength);
 
       if (enforceDERSetOrdering) {
-        for (let i = 1; i < encodedChildren.length; i++) {
-          const a = encodedChildren[i - 1];
-          const b = encodedChildren[i];
-          const len = Math.min(a.length, b.length);
-          let cmp = 0;
-          for (let j = 0; j < len; j++) {
-            if (a[j] !== b[j]) {
-              cmp = a[j] < b[j] ? -1 : 1;
-              break;
-            }
-          }
-          if (cmp === 0) {
-            cmp = a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
-          }
-          if (cmp > 0) {
-            throw new Error("SET elements are not in DER lexicographic order.");
-          }
-        }
+        this.ensureDerSetOrdering(encodedChildren);
       }
 
       return results as ParsedResult<T>;
@@ -282,60 +310,7 @@ export class SchemaParser<S extends TLVSchema> {
 
     if (isConstructedSchema(schema)) {
       let subOffset = 0;
-      let fieldsToProcess = [...schema.fields];
-
-      // strictモード時、SET要素の順序をDER仕様で検証
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          const encodeTag = (field: TLVSchema) => {
-            const tagClass = field.tagClass ?? TagClass.Universal;
-            const tagNumber = field.tagNumber ?? 0;
-            const constructed =
-              isConstructedSchema(field) || isRepeatedSchema(field)
-                ? 0x20
-                : 0x00;
-            const bytes: number[] = [];
-            let firstByte = (tagClass << 6) | constructed;
-            if (tagNumber < 31) {
-              firstByte |= tagNumber;
-              bytes.push(firstByte);
-            } else {
-              firstByte |= 0x1f;
-              bytes.push(firstByte);
-              let num = tagNumber;
-              const tagNumBytes: number[] = [];
-              do {
-                tagNumBytes.unshift(num % 128);
-                num = Math.floor(num / 128);
-              } while (num > 0);
-              for (let i = 0; i < tagNumBytes.length - 1; i++) {
-                bytes.push(tagNumBytes[i] | 0x80);
-              }
-              bytes.push(tagNumBytes[tagNumBytes.length - 1]);
-            }
-            return new Uint8Array(bytes);
-          };
-          return compareUint8Arrays(encodeTag(a), encodeTag(b));
-        });
-
-        /**
-         * Compare two Uint8Arrays lexicographically.
-         * Returns -1 if a < b, 1 if a > b, 0 if equal.
-         */
-        function compareUint8Arrays(a: Uint8Array, b: Uint8Array): number {
-          const len = Math.min(a.length, b.length);
-          for (let i = 0; i < len; i++) {
-            if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-          }
-          if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-          return 0;
-        }
-      }
+      const fieldsToProcess = this.prepareConstructedFields(schema);
 
       const result = {} as {
         [K in (typeof fieldsToProcess)[number] as K["name"]]: ParsedResult<K>;
@@ -361,11 +336,7 @@ export class SchemaParser<S extends TLVSchema> {
         subOffset += fieldParser.offset;
       }
 
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
+      this.assertConstructedLengthConsumed(subOffset, value.byteLength);
 
       return result as ParsedResult<T>;
     } else if (isPrimitiveSchema(schema)) {
@@ -432,31 +403,10 @@ export class SchemaParser<S extends TLVSchema> {
         subOffset += childTLV.endOffset;
       }
 
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
+      this.assertConstructedLengthConsumed(subOffset, value.byteLength);
 
       if (enforceDERSetOrdering) {
-        for (let i = 1; i < encodedChildren.length; i++) {
-          const a = encodedChildren[i - 1];
-          const b = encodedChildren[i];
-          const len = Math.min(a.length, b.length);
-          let cmp = 0;
-          for (let j = 0; j < len; j++) {
-            if (a[j] !== b[j]) {
-              cmp = a[j] < b[j] ? -1 : 1;
-              break;
-            }
-          }
-          if (cmp === 0) {
-            cmp = a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
-          }
-          if (cmp > 0) {
-            throw new Error("SET elements are not in DER lexicographic order.");
-          }
-        }
+        this.ensureDerSetOrdering(encodedChildren);
       }
 
       return results as ParsedResult<T>;
@@ -464,55 +414,7 @@ export class SchemaParser<S extends TLVSchema> {
 
     if (isConstructedSchema(schema)) {
       let subOffset = 0;
-      let fieldsToProcess = [...schema.fields];
-
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          const encodeTag = (field: TLVSchema) => {
-            const tagClass = field.tagClass ?? TagClass.Universal;
-            const tagNumber = field.tagNumber ?? 0;
-            const constructed =
-              isConstructedSchema(field) || isRepeatedSchema(field)
-                ? 0x20
-                : 0x00;
-            const bytes: number[] = [];
-            let firstByte = (tagClass << 6) | constructed;
-            if (tagNumber < 31) {
-              firstByte |= tagNumber;
-              bytes.push(firstByte);
-            } else {
-              firstByte |= 0x1f;
-              bytes.push(firstByte);
-              let num = tagNumber;
-              const tagNumBytes: number[] = [];
-              do {
-                tagNumBytes.unshift(num % 128);
-                num = Math.floor(num / 128);
-              } while (num > 0);
-              for (let i = 0; i < tagNumBytes.length - 1; i++) {
-                bytes.push(tagNumBytes[i] | 0x80);
-              }
-              bytes.push(tagNumBytes[tagNumBytes.length - 1]);
-            }
-            return new Uint8Array(bytes);
-          };
-          return compareUint8Arrays(encodeTag(a), encodeTag(b));
-        });
-
-        function compareUint8Arrays(a: Uint8Array, b: Uint8Array): number {
-          const len = Math.min(a.length, b.length);
-          for (let i = 0; i < len; i++) {
-            if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-          }
-          if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-          return 0;
-        }
-      }
+      const fieldsToProcess = this.prepareConstructedFields(schema);
 
       const result = {} as {
         [K in (typeof fieldsToProcess)[number] as K["name"]]: ParsedResult<K>;
@@ -541,11 +443,7 @@ export class SchemaParser<S extends TLVSchema> {
         subOffset += fieldParser.offset;
       }
 
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
+      this.assertConstructedLengthConsumed(subOffset, value.byteLength);
 
       return result as ParsedResult<T>;
     } else if (isPrimitiveSchema(schema)) {
@@ -731,6 +629,52 @@ export class SchemaParser<S extends TLVSchema> {
     }
 
     return true;
+  }
+
+  /**
+   * Produces a field list copy for constructed tags, applying DER ordering when strict mode is active.
+   */
+  private prepareConstructedFields(
+    schema: ConstructedTLVSchema<readonly TLVSchema[]>,
+  ): TLVSchema[] {
+    // Work on a copy so strict DER ordering does not leak into caller schema definitions.
+    const fields = [...schema.fields];
+    if (
+      this.strict &&
+      schema.tagNumber === 17 &&
+      (schema.tagClass === TagClass.Universal || schema.tagClass === undefined)
+    ) {
+      fields.sort((a, b) => lexCompare(encodeTag(a), encodeTag(b)));
+    }
+    return fields;
+  }
+
+  /**
+   * Validates that encoded SET elements follow DER lexicographic ordering.
+   */
+  private ensureDerSetOrdering(encodedChildren: readonly Uint8Array[]): void {
+    // Use lexCompare so behaviour mirrors builder-side ordering and DER expectations.
+    for (let i = 1; i < encodedChildren.length; i++) {
+      const comparison = lexCompare(encodedChildren[i - 1], encodedChildren[i]);
+      if (comparison > 0) {
+        throw new Error("SET elements are not in DER lexicographic order.");
+      }
+    }
+  }
+
+  /**
+   * Asserts that the accumulated constructed content length matches the declared TLV length.
+   */
+  private assertConstructedLengthConsumed(
+    consumed: number,
+    expectedLength: number,
+  ): void {
+    // Centralised length check keeps error messaging consistent across sync/async paths.
+    if (consumed !== expectedLength) {
+      throw new Error(
+        "Constructed element does not end exactly at the expected length.",
+      );
+    }
   }
 }
 
