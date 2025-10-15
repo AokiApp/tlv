@@ -64,21 +64,52 @@ export type TLVSchema<N extends string = string> =
   | ConstructedTLVSchema<N, readonly TLVSchema[]>
   | RepeatedTLVSchema<N, TLVSchema>;
 
+/**
+ * ParsedResult type family — readable breakdown
+ *
+ * Explanation DSL (parse-time):
+ * - Primitive(name, DecodedType) => DecodedType
+ * - Constructed(name, [field1: Schema, field2?: Schema, ...]) =>
+ *     { field1: ParsedResult<Schema>; field2?: ParsedResult<Schema>; ... }
+ * - Repeated(name, ItemSchema) => ParsedResult<ItemSchema>[]
+ *
+ * Notes:
+ * - Optional fields are marked with '?' and become optional properties.
+ * - Keys are taken from each child schema's 'name' property.
+ */
+type ParsedConstructedFields<F extends readonly TLVSchema[]> = {
+  [Field in F[number] as Field extends { optional: true }
+    ? Field["name"]
+    : never]?: ParsedResult<Field>;
+} & {
+  [Field in F[number] as Field extends { optional: true }
+    ? never
+    : Field["name"]]: ParsedResult<Field>;
+};
+
+/**
+ * The parse-time representation for a primitive schema is the value
+ * after decoding from the TLV buffer.
+ */
+type ParsedPrimitive<DecodedType> = DecodedType;
+
+/**
+ * The parse-time representation for a repeated schema is an array of
+ * parse-time values of its item schema.
+ */
+type ParsedRepeated<Item extends TLVSchema> = Array<ParsedResult<Item>>;
+
+/**
+ * Maps a schema to its parse-time data shape.
+ * Broken down into aliases above for readability and tooling friendliness.
+ */
 export type ParsedResult<S extends TLVSchema> =
   S extends ConstructedTLVSchema<string, infer F>
-    ? {
-        [Field in F[number] as Field extends { optional: true }
-          ? Field["name"]
-          : never]?: ParsedResult<Field>;
-      } & {
-        [Field in F[number] as Field extends { optional: true }
-          ? never
-          : Field["name"]]: ParsedResult<Field>;
-      }
+    ? ParsedConstructedFields<F>
     : S extends PrimitiveTLVSchema<string, infer DecodedType>
-      ? DecodedType
+      ? ParsedPrimitive<DecodedType>
       : S extends RepeatedTLVSchema<string, infer Item>
-        ? Array<ParsedResult<Item>>
+        ? ParsedRepeated<Item>
         : never;
 
 /**
