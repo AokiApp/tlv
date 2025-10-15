@@ -1,6 +1,4 @@
-import { BasicTLVParser } from "./basic-parser.js";
-
-import { TagClass, TagInfo } from "../common/types.js";
+import type { TagClass } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
 
@@ -11,6 +9,10 @@ interface TLVSchemaBase {
   readonly name: string;
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
+  /**
+   * When present, this field is optional in a constructed container.
+   */
+  readonly optional?: true;
 }
 
 /**
@@ -34,20 +36,71 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
   readonly fields: F;
 }
 
+// Describes a repeated TLV schema entry (e.g. SET/SEQUENCE OF).
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
-  readonly optional?: boolean;
+  readonly optional?: true;
 }
 
-type TLVSchema =
+export type TLVSchema =
   | PrimitiveTLVSchema<unknown>
   | ConstructedTLVSchema<readonly TLVSchema[]>
   | RepeatedTLVSchema;
 
-type ParsedResult<S extends TLVSchema> =
+/**
+ * ParsedResult&lt;S&gt; describes the TypeScript shape produced by SchemaParser for a TLV schema S.
+ *
+ * Rules:
+ * 1) Primitive fields:
+ *    - The result is the DecodedType for that primitive (default: ArrayBuffer), i.e., what decode(buffer) returns.
+ *
+ * 2) Constructed containers (SEQUENCE/SET-like):
+ *    - The result is an object whose keys come from each field schema's `name`.
+ *    - Required fields (no `optional` flag) are present as required properties.
+ *    - Optional fields (`optional: true`) appear as optional properties (using the `?` modifier).
+ *
+ * 3) Repeated fields (SEQUENCE OF / SET OF):
+ *    - The result is Array&lt;ParsedResult&lt;item&gt;&gt; where `item` is the nested field schema.
+ *
+ * 4) Optional flag type discrimination:
+ *    - The flag is a literal `optional?: true` on a field schema.
+ *    - It is used purely for type-level discrimination to determine if a property should be optional.
+ *
+ * 5) Runtime vs. typing:
+ *    - Strict mode and runtime validation are separate concerns.
+ *    - ParsedResult only models the static shape implied by the schema; it does not enforce runtime presence.
+ *
+ * Pseudo-code (informal):
+ *   function TypeOfParsedResult(schema S):
+ *     if S is Constructed(fields F):
+ *       let R = {}
+ *       for each field f in F:
+ *         key = f.name
+ *         valueType = TypeOfParsedResult(f)
+ *         if f.optional === true:
+ *           R[key]? = valueType // optional property
+ *         else:
+ *           R[key] = valueType  // required property
+ *       return R
+ *     else if S is Primitive(decodedType D):
+ *       return D
+ *     else if S is Repeated(item I):
+ *       return Array&lt;TypeOfParsedResult(I)&gt;
+ *
+ * Notes:
+ * - The `optional` flag does not change array element types; it only toggles property optionality in constructed objects.
+ * - Keys are computed from Field["name"]; duplicate names should be avoided and may lead to undefined behavior.
+ */
+export type ParsedResult<S extends TLVSchema> =
   S extends ConstructedTLVSchema<infer F>
     ? {
-        [Field in F[number] as Field["name"]]: ParsedResult<Field>;
+        [Field in F[number] as Field extends { optional: true }
+          ? Field["name"]
+          : never]?: ParsedResult<Field>;
+      } & {
+        [Field in F[number] as Field extends { optional: true }
+          ? never
+          : Field["name"]]: ParsedResult<Field>;
       }
     : S extends PrimitiveTLVSchema<infer DecodedType>
       ? DecodedType
@@ -56,307 +109,37 @@ type ParsedResult<S extends TLVSchema> =
         : never;
 
 /**
- * Checks if a given schema is a constructed schema.
- * @param schema - A TLV schema object.
- * @returns True if the schema has fields; false otherwise.
- */
-function isConstructedSchema(
-  schema: TLVSchema,
-): schema is ConstructedTLVSchema<readonly TLVSchema[]> {
-  return (
-    "fields" in schema &&
-    Array.isArray(
-      (schema as unknown as ConstructedTLVSchema<readonly TLVSchema[]>).fields,
-    )
-  );
-}
-function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
-  return "item" in schema;
-}
-
-function isPrimitiveSchema(
-  schema: TLVSchema,
-): schema is PrimitiveTLVSchema<unknown> {
-  return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
-}
-/**
  * A parser that parses TLV data based on a given schema.
- * @template S - The schema type.
+ * Provides synchronous parse operations.
  */
-export class SchemaParser<S extends TLVSchema> {
-  schema: S;
-  buffer = new ArrayBuffer(0);
-  view = new DataView(this.buffer);
-  offset = 0;
-  strict: boolean;
-
-  /**
-   * Constructs a SchemaParser for the specified schema.
-   * @param schema - The TLV schema to use.
-   */
-  constructor(schema: S, options?: { strict?: boolean }) {
-    this.schema = schema;
-    this.strict = options?.strict ?? false;
-  }
-
-  /**
-   * Parses data in synchronous mode.
-   * @param buffer - The input data as an ArrayBuffer.
-   * @returns Parsed result matching the schema.
-   * Note: Strict mode is configured via the constructor only.
-   */
-  public parse(buffer: ArrayBuffer): ParsedResult<S> {
-    return this.parseSync(buffer);
-  }
-
-  /**
-   * Parses data in synchronous mode.
-   * @param buffer - The input data.
-   * @returns Parsed result matching the schema.
-   */
-  public parseSync(buffer: ArrayBuffer): ParsedResult<S> {
-    this.buffer = buffer;
-    this.view = new DataView(buffer);
-    this.offset = 0;
-    return this.parseWithSchemaSync(this.schema);
-  }
-
-  /**
-   * Recursively parses data in synchronous mode.
-   * @param schema - The schema to parse with.
-   * @returns Parsed result.
-   */
-  private parseWithSchemaSync<T extends TLVSchema>(schema: T): ParsedResult<T> {
-    const subBuffer = this.buffer.slice(this.offset);
-    const { tag, value, endOffset } = BasicTLVParser.parse(subBuffer);
-    this.offset += endOffset;
-
-    this.validateTagInfo(tag, schema);
-
-    if (isRepeatedSchema(schema)) {
-      let subOffset = 0;
-      const results = [] as Array<ParsedResult<typeof schema.item>>;
-      const encodedChildren: Uint8Array[] = [];
-      while (subOffset < value.byteLength) {
-        const childTLV = BasicTLVParser.parse(value.slice(subOffset));
-        encodedChildren.push(
-          new Uint8Array(
-            value.slice(subOffset, subOffset + childTLV.endOffset),
-          ),
-        );
-
-        const childParser = new SchemaParser(schema.item, {
-          strict: this.strict,
-        });
-        const parsedChild = childParser.parse(value.slice(subOffset));
-        results.push(parsedChild);
-
-        subOffset += childTLV.endOffset;
-      }
-
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
-
-      if (
-        (schema.tagClass ?? TagClass.Universal) === TagClass.Universal &&
-        (schema.tagNumber ?? 16) === 17 &&
-        this.strict
-      ) {
-        for (let i = 1; i < encodedChildren.length; i++) {
-          const a = encodedChildren[i - 1];
-          const b = encodedChildren[i];
-          const len = Math.min(a.length, b.length);
-          let cmp = 0;
-          for (let j = 0; j < len; j++) {
-            if (a[j] !== b[j]) {
-              cmp = a[j] < b[j] ? -1 : 1;
-              break;
-            }
-          }
-          if (cmp === 0) {
-            cmp = a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
-          }
-          if (cmp > 0) {
-            throw new Error("SET elements are not in DER lexicographic order.");
-          }
-        }
-      }
-
-      return results as ParsedResult<T>;
-    }
-
-    if (isConstructedSchema(schema)) {
-      let subOffset = 0;
-      let fieldsToProcess = [...schema.fields];
-
-      // strictモード時、SET要素の順序をDER仕様で検証
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          const encodeTag = (field: TLVSchema) => {
-            const tagClass = field.tagClass ?? TagClass.Universal;
-            const tagNumber = field.tagNumber ?? 0;
-            const constructed =
-              isConstructedSchema(field) || isRepeatedSchema(field)
-                ? 0x20
-                : 0x00;
-            const bytes: number[] = [];
-            let firstByte = (tagClass << 6) | constructed;
-            if (tagNumber < 31) {
-              firstByte |= tagNumber;
-              bytes.push(firstByte);
-            } else {
-              firstByte |= 0x1f;
-              bytes.push(firstByte);
-              let num = tagNumber;
-              const tagNumBytes: number[] = [];
-              do {
-                tagNumBytes.unshift(num % 128);
-                num = Math.floor(num / 128);
-              } while (num > 0);
-              for (let i = 0; i < tagNumBytes.length - 1; i++) {
-                bytes.push(tagNumBytes[i] | 0x80);
-              }
-              bytes.push(tagNumBytes[tagNumBytes.length - 1]);
-            }
-            return new Uint8Array(bytes);
-          };
-          return compareUint8Arrays(encodeTag(a), encodeTag(b));
-        });
-
-        /**
-         * Compare two Uint8Arrays lexicographically.
-         * Returns -1 if a < b, 1 if a > b, 0 if equal.
-         */
-        function compareUint8Arrays(a: Uint8Array, b: Uint8Array): number {
-          const len = Math.min(a.length, b.length);
-          for (let i = 0; i < len; i++) {
-            if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-          }
-          if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-          return 0;
-        }
-      }
-
-      const result = {} as {
-        [K in (typeof fieldsToProcess)[number] as K["name"]]: ParsedResult<K>;
-      };
-
-      for (const field of fieldsToProcess) {
-        const fieldParser = new SchemaParser(field, { strict: this.strict });
-        result[field.name] = fieldParser.parse(value.slice(subOffset));
-        subOffset += fieldParser.offset;
-      }
-
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
-
-      return result as ParsedResult<T>;
-    } else if (isPrimitiveSchema(schema)) {
-      if (schema.decode) {
-        return schema.decode(value) as ParsedResult<T>;
-      }
-      return value as ParsedResult<T>;
-    } else {
-      throw new Error("Unsupported TLV schema kind for parseSync");
-    }
-  }
-
-  /**
-   * Recursively parses data in asynchronous mode.
-   * @param schema - The schema to parse with.
-   * @returns A Promise of the parsed result.
-   */
-
-  /**
-   * Validates tag information against the expected schema.
-   * @param tagInfo - The parsed tag info.
-   * @param schema - The schema to validate.
-   * @throws Error if tag class, tag number, or constructed status does not match.
-   */
-  private validateTagInfo(tagInfo: TagInfo, schema: TLVSchema): void {
-    if (schema.tagClass !== undefined && schema.tagClass !== tagInfo.tagClass) {
-      throw new Error(
-        `Tag class mismatch: expected ${schema.tagClass}, but got ${tagInfo.tagClass}`,
-      );
-    }
-    const expectedConstructed =
-      isConstructedSchema(schema) || isRepeatedSchema(schema);
-    if (expectedConstructed !== tagInfo.constructed) {
-      throw new Error(
-        `Tag constructed flag mismatch: expected ${expectedConstructed}, but got ${tagInfo.constructed}`,
-      );
-    }
-    if (
-      schema.tagNumber !== undefined &&
-      schema.tagNumber !== tagInfo.tagNumber
-    ) {
-      throw new Error(
-        `Tag number mismatch: expected ${schema.tagNumber}, but got ${tagInfo.tagNumber}`,
-      );
-    }
-  }
+// Consumes TLV buffers and produces structured data following the schema layout.
+export declare class SchemaParser<S extends TLVSchema> {
+  readonly schema: S;
+  readonly strict: boolean;
+  constructor(schema: S, options?: { strict?: boolean });
+  // Parses the TLV buffer and returns schema-typed data.
+  parse(buffer: ArrayBuffer): ParsedResult<S>;
 }
 
 /**
  * Utility class for creating new TLV schemas.
  */
-export class Schema {
-  /**
-   * Creates a primitive TLV schema definition.
-   * @param name - The name of the field.
-   * @param decode - Optional decode function.
-   * @param options - Optional tag class and tag number.
-   * @returns A primitive TLV schema object.
-   */
-  public static primitive<N extends string, D = ArrayBuffer>(
+// Convenience factory for constructing schema descriptors consumed by the parser.
+export declare class Schema {
+  static primitive<N extends string, D = ArrayBuffer>(
     name: N,
     decode?: (buffer: ArrayBuffer) => D,
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
     },
-  ): PrimitiveTLVSchema<D> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
-    return {
-      name,
-      decode,
-      tagClass,
-      tagNumber,
-    };
-  }
-
-  /**
-   * Creates a constructed TLV schema definition.
-   * @param name - The name of the field.
-   * @param fields - An array of TLV schema definitions.
-   * @param options - Optional tag class and tag number.
-   * @returns A constructed TLV schema object.
-   */
-  public static constructed<N extends string, F extends readonly TLVSchema[]>(
+  ): PrimitiveTLVSchema<D> & { name: N };
+  static constructed<N extends string, F extends readonly TLVSchema[]>(
     name: N,
     fields: F,
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
     },
-  ): ConstructedTLVSchema<F> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
-    return {
-      name,
-      fields,
-      tagClass,
-      tagNumber,
-    };
-  }
+  ): ConstructedTLVSchema<F> & { name: N };
 }
