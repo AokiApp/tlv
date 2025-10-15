@@ -20,9 +20,9 @@ interface TLVSchemaBase {
 export interface PrimitiveTLVSchema<DecodedType = DefaultEncodeType>
   extends TLVSchemaBase {
   /**
-   * Optional decode function which can return either a value or a Promise of a value.
+   * Optional decode function for synchronous decoding.
    */
-  readonly decode?: (buffer: ArrayBuffer) => DecodedType | Promise<DecodedType>;
+  readonly decode?: (buffer: ArrayBuffer) => DecodedType;
 }
 
 /**
@@ -80,7 +80,7 @@ function isPrimitiveSchema(
   return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
 }
 /**
- * A parser that parses TLV data based on a given schema (synchronous or asynchronous).
+ * A parser that parses TLV data based on a given schema.
  * @template S - The schema type.
  */
 export class SchemaParser<S extends TLVSchema> {
@@ -100,43 +100,21 @@ export class SchemaParser<S extends TLVSchema> {
   }
 
   /**
-   * Overloaded method: synchronous version.
+   * Parses data in synchronous mode.
    * @param buffer - The input data as an ArrayBuffer.
+   * @param options - Optional strict mode override.
    * @returns Parsed result matching the schema.
    */
-  public parse(buffer: ArrayBuffer): ParsedResult<S>;
-
-  /**
-   * Overloaded method: asynchronous version.
-   * @param buffer - The input data as an ArrayBuffer.
-   * @param options - Enable async parsing.
-   * @returns A Promise of parsed result matching the schema.
-   */
   public parse(
     buffer: ArrayBuffer,
-    options: { async: true },
-  ): Promise<ParsedResult<S>>;
-
-  /**
-   * Parses data either in synchronous or asynchronous mode.
-   * @param buffer - The input data as an ArrayBuffer.
-   * @param options - If { async: true }, parses asynchronously; otherwise synchronously.
-   * @returns Either a parsed result or a Promise of a parsed result.
-   */
-  public parse(
-    buffer: ArrayBuffer,
-    options?: { async?: boolean; strict?: boolean },
-  ): ParsedResult<S> | Promise<ParsedResult<S>> {
+    options?: { strict?: boolean },
+  ): ParsedResult<S> {
     const prevStrict = this.strict;
     if (options?.strict !== undefined) {
       this.strict = options.strict;
     }
     try {
-      if (options?.async) {
-        return this.parseAsync(buffer);
-      } else {
-        return this.parseSync(buffer);
-      }
+      return this.parseSync(buffer);
     } finally {
       this.strict = prevStrict;
     }
@@ -154,17 +132,6 @@ export class SchemaParser<S extends TLVSchema> {
     return this.parseWithSchemaSync(this.schema);
   }
 
-  /**
-   * Parses data in asynchronous mode.
-   * @param buffer - The input data.
-   * @returns A Promise of parsed result matching the schema.
-   */
-  public async parseAsync(buffer: ArrayBuffer): Promise<ParsedResult<S>> {
-    this.buffer = buffer;
-    this.view = new DataView(buffer);
-    this.offset = 0;
-    return await this.parseWithSchemaAsync(this.schema);
-  }
 
   /**
    * Recursively parses data in synchronous mode.
@@ -309,17 +276,7 @@ export class SchemaParser<S extends TLVSchema> {
       return result as ParsedResult<T>;
     } else if (isPrimitiveSchema(schema)) {
       if (schema.decode) {
-        const decoded = schema.decode(value);
-        if (
-          decoded instanceof Promise ||
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-          (decoded as any)?.then instanceof Function
-        ) {
-          throw new Error(
-            `Asynchronous decoder used in synchronous parse for field: ${schema.name}`,
-          );
-        }
-        return decoded as ParsedResult<T>;
+        return schema.decode(value) as ParsedResult<T>;
       }
       return value as ParsedResult<T>;
     } else {
@@ -332,72 +289,6 @@ export class SchemaParser<S extends TLVSchema> {
    * @param schema - The schema to parse with.
    * @returns A Promise of the parsed result.
    */
-  private async parseWithSchemaAsync<T extends TLVSchema>(
-    schema: T,
-  ): Promise<ParsedResult<T>> {
-    const subBuffer = this.buffer.slice(this.offset);
-    const { tag, value, endOffset } = BasicTLVParser.parse(subBuffer);
-    this.offset += endOffset;
-
-    this.validateTagInfo(tag, schema);
-
-    if (isRepeatedSchema(schema)) {
-      let subOffset = 0;
-      const results = [] as Array<ParsedResult<typeof schema.item>>;
-      while (subOffset < value.byteLength) {
-        const childTLV = BasicTLVParser.parse(value.slice(subOffset));
-        const fieldParser = new SchemaParser(schema.item, {
-          strict: this.strict,
-        });
-        const parsedField = await fieldParser.parseAsync(
-          value.slice(subOffset),
-        );
-        results.push(parsedField);
-        subOffset += childTLV.endOffset;
-      }
-
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
-
-      return results as ParsedResult<T>;
-    }
-
-    if (isConstructedSchema(schema)) {
-      let subOffset = 0;
-      const result = {} as {
-        [K in (typeof schema.fields)[number] as K["name"]]: ParsedResult<K>;
-      };
-
-      for (const field of schema.fields) {
-        const fieldParser = new SchemaParser(field, { strict: this.strict });
-        const parsedField = await fieldParser.parseAsync(
-          value.slice(subOffset),
-        );
-        result[field.name] = parsedField;
-        subOffset += fieldParser.offset;
-      }
-
-      if (subOffset !== value.byteLength) {
-        throw new Error(
-          "Constructed element does not end exactly at the expected length.",
-        );
-      }
-
-      return result as ParsedResult<T>;
-    } else if (isPrimitiveSchema(schema)) {
-      if (schema.decode) {
-        // decode might return a Promise, so it is awaited
-        const decoded = schema.decode(value);
-        return (await Promise.resolve(decoded)) as ParsedResult<T>;
-      }
-      return value as ParsedResult<T>;
-    } else {
-      throw new Error("Unsupported TLV schema kind for parseAsync");
-    }
-  }
 
   /**
    * Validates tag information against the expected schema.
@@ -442,7 +333,7 @@ export class Schema {
    */
   public static primitive<N extends string, D = ArrayBuffer>(
     name: N,
-    decode?: (buffer: ArrayBuffer) => D | Promise<D>,
+    decode?: (buffer: ArrayBuffer) => D,
     options?: {
       tagClass?: TagClass;
       tagNumber?: number;
