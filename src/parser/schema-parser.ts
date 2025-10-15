@@ -36,7 +36,6 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
-  readonly kind: "sequenceOf" | "setOf";
   readonly optional?: boolean;
 }
 
@@ -72,10 +71,7 @@ function isConstructedSchema(
   );
 }
 function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
-  return (
-    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
-    (schema as RepeatedTLVSchema).kind === "setOf"
-  );
+  return "item" in schema;
 }
 
 function isPrimitiveSchema(
@@ -209,7 +205,11 @@ export class SchemaParser<S extends TLVSchema> {
         );
       }
 
-      if (schema.kind === "setOf" && this.strict) {
+      if (
+        (schema.tagClass ?? TagClass.Universal) === TagClass.Universal &&
+        (schema.tagNumber ?? 16) === 17 &&
+        this.strict
+      ) {
         for (let i = 1; i < encodedChildren.length; i++) {
           const a = encodedChildren[i - 1];
           const b = encodedChildren[i];
@@ -481,49 +481,4 @@ export class Schema {
     };
   }
 
-  /**
-   * Creates a SEQUENCE OF TLV parser schema.
-   */
-  public static sequenceOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "sequenceOf",
-      tagClass,
-      tagNumber,
-      optional,
-    };
-  }
-
-  /**
-   * Creates a SET OF TLV parser schema.
-   */
-  public static setOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "setOf",
-      tagClass,
-      tagNumber,
-      optional,
-    };
-  }
 }

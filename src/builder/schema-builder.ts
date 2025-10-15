@@ -35,7 +35,6 @@ export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
 
 interface RepeatedTLVSchema extends TLVSchemaBase {
   readonly item: TLVSchema;
-  readonly kind: "sequenceOf" | "setOf";
   readonly optional?: boolean;
 }
 
@@ -71,10 +70,7 @@ function isConstructedSchema<F extends readonly TLVSchema[]>(
 }
 
 function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
-  return (
-    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
-    (schema as RepeatedTLVSchema).kind === "setOf"
-  );
+  return "item" in schema;
 }
 
 function isPrimitiveSchema(
@@ -218,16 +214,15 @@ export class SchemaBuilder<S extends TLVSchema> {
         this.buildWithSchemaSync(schema.item, itemData),
       );
 
-      if (schema.kind === "setOf" && this.strict) {
+      if (
+        (schema.tagClass ?? TagClass.Universal) === TagClass.Universal &&
+        (schema.tagNumber ?? 16) === 17 &&
+        this.strict
+      ) {
         childBuffers = childBuffers.slice().sort((a, b) => {
           const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
           const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          const len = Math.min(ua.length, ub.length);
-          for (let i = 0; i < len; i++) {
-            if (ua[i] !== ub[i]) return ua[i] < ub[i] ? -1 : 1;
-          }
-          if (ua.length !== ub.length) return ua.length < ub.length ? -1 : 1;
-          return 0;
+          return lexCompare(ua, ub);
         });
       }
 
@@ -247,7 +242,7 @@ export class SchemaBuilder<S extends TLVSchema> {
       return BasicTLVBuilder.build({
         tag: {
           tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
+          tagNumber: schema.tagNumber ?? 16,
           constructed: true,
         },
         length: childrenData.byteLength,
@@ -359,7 +354,11 @@ export class SchemaBuilder<S extends TLVSchema> {
           this.buildWithSchemaAsync(schema.item, itemData),
         ),
       );
-      if (schema.kind === "setOf" && this.strict) {
+      if (
+        (schema.tagClass ?? TagClass.Universal) === TagClass.Universal &&
+        (schema.tagNumber ?? 16) === 17 &&
+        this.strict
+      ) {
         childBuffers = childBuffers.slice().sort((a, b) => {
           const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
           const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
@@ -381,7 +380,7 @@ export class SchemaBuilder<S extends TLVSchema> {
       return BasicTLVBuilder.build({
         tag: {
           tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
+          tagNumber: schema.tagNumber ?? 16,
           constructed: true,
         },
         length: childrenData.byteLength,
@@ -546,49 +545,4 @@ export class Schema {
     };
   }
 
-  /**
-   * Creates a SEQUENCE OF schema definition.
-   */
-  public static sequenceOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "sequenceOf",
-      tagClass,
-      tagNumber,
-      optional,
-    };
-  }
-
-  /**
-   * Creates a SET OF schema definition.
-   */
-  public static setOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "setOf",
-      tagClass,
-      tagNumber,
-      optional,
-    };
-  }
 }
