@@ -1,12 +1,23 @@
 import type { TagClass } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
+type SchemaOptions = {
+  readonly tagClass?: TagClass;
+  readonly tagNumber?: number;
+  readonly optional?: true;
+};
+
+type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
+  optional: true;
+}
+  ? { readonly optional: true }
+  : Record<never, never>;
 
 /**
  * Base interface for a TLV schema object.
  */
-interface TLVSchemaBase {
-  readonly name: string;
+interface TLVSchemaBase<N extends string = string> {
+  readonly name: N;
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
   /**
@@ -19,8 +30,10 @@ interface TLVSchemaBase {
  * Interface for defining a primitive TLV schema.
  * @template DecodedType - The type after decoding.
  */
-export interface PrimitiveTLVSchema<DecodedType = DefaultEncodeType>
-  extends TLVSchemaBase {
+export interface PrimitiveTLVSchema<
+  N extends string = string,
+  DecodedType = DefaultEncodeType,
+> extends TLVSchemaBase<N> {
   /**
    * Optional decode function for synchronous decoding.
    */
@@ -31,21 +44,25 @@ export interface PrimitiveTLVSchema<DecodedType = DefaultEncodeType>
  * Interface for defining a constructed TLV schema.
  * @template F - The array of child field schemas.
  */
-export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
-  extends TLVSchemaBase {
+export interface ConstructedTLVSchema<
+  N extends string = string,
+  F extends readonly TLVSchema[] = readonly TLVSchema[],
+> extends TLVSchemaBase<N> {
   readonly fields: F;
 }
 
 // Describes a repeated TLV schema entry (e.g. SET/SEQUENCE OF).
-interface RepeatedTLVSchema extends TLVSchemaBase {
-  readonly item: TLVSchema;
-  readonly optional?: true;
+interface RepeatedTLVSchema<
+  N extends string = string,
+  Item extends TLVSchema = TLVSchema,
+> extends TLVSchemaBase<N> {
+  readonly item: Item;
 }
 
-export type TLVSchema =
-  | PrimitiveTLVSchema<unknown>
-  | ConstructedTLVSchema<readonly TLVSchema[]>
-  | RepeatedTLVSchema;
+export type TLVSchema<N extends string = string> =
+  | PrimitiveTLVSchema<N, unknown>
+  | ConstructedTLVSchema<N, readonly TLVSchema[]>
+  | RepeatedTLVSchema<N, TLVSchema>;
 
 /**
  * ParsedResult&lt;S&gt; describes the TypeScript shape produced by SchemaParser for a TLV schema S.
@@ -92,7 +109,7 @@ export type TLVSchema =
  * - Keys are computed from Field["name"]; duplicate names should be avoided and may lead to undefined behavior.
  */
 export type ParsedResult<S extends TLVSchema> =
-  S extends ConstructedTLVSchema<infer F>
+  S extends ConstructedTLVSchema<string, infer F>
     ? {
         [Field in F[number] as Field extends { optional: true }
           ? Field["name"]
@@ -102,10 +119,10 @@ export type ParsedResult<S extends TLVSchema> =
           ? never
           : Field["name"]]: ParsedResult<Field>;
       }
-    : S extends PrimitiveTLVSchema<infer DecodedType>
+    : S extends PrimitiveTLVSchema<string, infer DecodedType>
       ? DecodedType
-      : S extends RepeatedTLVSchema
-        ? Array<ParsedResult<S["item"]>>
+      : S extends RepeatedTLVSchema<string, infer Item>
+        ? Array<ParsedResult<Item>>
         : never;
 
 /**
@@ -126,20 +143,22 @@ export declare class SchemaParser<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors consumed by the parser.
 export declare class Schema {
-  static primitive<N extends string, D = ArrayBuffer>(
+  static primitive<
+    N extends string,
+    D = ArrayBuffer,
+    O extends SchemaOptions | undefined = undefined,
+  >(
     name: N,
     decode?: (buffer: ArrayBuffer) => D,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): PrimitiveTLVSchema<D> & { name: N };
-  static constructed<N extends string, F extends readonly TLVSchema[]>(
+    options?: O,
+  ): PrimitiveTLVSchema<N, D> & OptionalFlag<O>;
+  static constructed<
+    N extends string,
+    F extends readonly TLVSchema[],
+    O extends SchemaOptions | undefined = undefined,
+  >(
     name: N,
     fields: F,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): ConstructedTLVSchema<F> & { name: N };
+    options?: O,
+  ): ConstructedTLVSchema<N, F> & OptionalFlag<O>;
 }

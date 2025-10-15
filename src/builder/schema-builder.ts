@@ -1,12 +1,23 @@
 import type { TagClass } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
+type SchemaOptions = {
+  readonly tagClass?: TagClass;
+  readonly tagNumber?: number;
+  readonly optional?: true;
+};
+
+type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
+  optional: true;
+}
+  ? { readonly optional: true }
+  : Record<never, never>;
 
 /**
  * Base interface for a TLV schema object.
  */
-interface TLVSchemaBase {
-  readonly name: string;
+interface TLVSchemaBase<N extends string = string> {
+  readonly name: N;
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
   /**
@@ -19,8 +30,10 @@ interface TLVSchemaBase {
  * Interface for defining a primitive TLV schema.
  * @template EncodedType - The type before encoding.
  */
-export interface PrimitiveTLVSchema<EncodedType = DefaultEncodeType>
-  extends TLVSchemaBase {
+export interface PrimitiveTLVSchema<
+  N extends string = string,
+  EncodedType = DefaultEncodeType,
+> extends TLVSchemaBase<N> {
   /**
    * Optional encode function for synchronous encoding.
    */
@@ -31,24 +44,28 @@ export interface PrimitiveTLVSchema<EncodedType = DefaultEncodeType>
  * Interface for defining a constructed TLV schema.
  * @template F - The array of child field schemas.
  */
-export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
-  extends TLVSchemaBase {
+export interface ConstructedTLVSchema<
+  N extends string = string,
+  F extends readonly TLVSchema[] = readonly TLVSchema[],
+> extends TLVSchemaBase<N> {
   readonly fields: F;
 }
 
 // Describes a repeated TLV schema entry (e.g. SEQUENCE OF).
-interface RepeatedTLVSchema extends TLVSchemaBase {
-  readonly item: TLVSchema;
-  readonly optional?: true;
+interface RepeatedTLVSchema<
+  N extends string = string,
+  Item extends TLVSchema = TLVSchema,
+> extends TLVSchemaBase<N> {
+  readonly item: Item;
 }
 
-export type TLVSchema =
-  | PrimitiveTLVSchema<unknown>
-  | ConstructedTLVSchema<readonly TLVSchema[]>
-  | RepeatedTLVSchema;
+export type TLVSchema<N extends string = string> =
+  | PrimitiveTLVSchema<N, unknown>
+  | ConstructedTLVSchema<N, readonly TLVSchema[]>
+  | RepeatedTLVSchema<N, TLVSchema>;
 
 export type BuildData<S extends TLVSchema> =
-  S extends ConstructedTLVSchema<infer F>
+  S extends ConstructedTLVSchema<string, infer F>
     ? {
         [Field in F[number] as Field extends { optional: true }
           ? Field["name"]
@@ -58,10 +75,10 @@ export type BuildData<S extends TLVSchema> =
           ? never
           : Field["name"]]: BuildData<Field>;
       }
-    : S extends PrimitiveTLVSchema<infer EncodedType>
+    : S extends PrimitiveTLVSchema<string, infer EncodedType>
       ? EncodedType
-      : S extends RepeatedTLVSchema
-        ? Array<BuildData<S["item"]>>
+      : S extends RepeatedTLVSchema<string, infer Item>
+        ? Array<BuildData<Item>>
         : never;
 
 // Builds TLV payloads according to the provided schema definition.
@@ -78,20 +95,22 @@ export declare class SchemaBuilder<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors used by the builder.
 export declare class Schema {
-  static primitive<N extends string, E = ArrayBuffer>(
+  static primitive<
+    N extends string,
+    E = ArrayBuffer,
+    O extends SchemaOptions | undefined = undefined,
+  >(
     name: N,
     encode?: (data: E) => ArrayBuffer,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): PrimitiveTLVSchema<E> & { name: N };
-  static constructed<N extends string, F extends readonly TLVSchema[]>(
+    options?: O,
+  ): PrimitiveTLVSchema<N, E> & OptionalFlag<O>;
+  static constructed<
+    N extends string,
+    F extends readonly TLVSchema[],
+    O extends SchemaOptions | undefined = undefined,
+  >(
     name: N,
     fields: F,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): ConstructedTLVSchema<F> & { name: N };
+    options?: O,
+  ): ConstructedTLVSchema<N, F> & OptionalFlag<O>;
 }
