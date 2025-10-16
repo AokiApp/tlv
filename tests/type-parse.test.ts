@@ -1,7 +1,7 @@
 // tests/type-parse.spec.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { Schema as PSchema, SchemaParser } from "@aokiapp/tlv/parser";
+import { Schema as PSchema, SchemaParser } from "../src/parser";
 import { AssertEqual, assertType } from "./utils";
 
 describe("parse-only type test (single large constructed schema)", () => {

@@ -1,7 +1,7 @@
 // tests/type-build.spec.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { Schema as BSchema, SchemaBuilder } from "@aokiapp/tlv/builder";
+import { Schema as BSchema, SchemaBuilder } from "../src/builder";
 import { AssertEqual, assertType } from "./utils";
 
 describe("build-only type test (single large constructed schema)", () => {
