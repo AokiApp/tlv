@@ -65,53 +65,38 @@ type TLVSchema<N extends string = string, E = unknown> =
   | ConstructedTLVSchema<N, readonly TLVSchema[]>
   | RepeatedTLVSchema<N, TLVSchema>;
 
-/**
- * BuildData type family — readable breakdown
- *
- * Explanation DSL (build-time):
- * - Primitive(name, EncodedType) => EncodedType
- * - Constructed(name, [field1: Schema, field2?: Schema, ...]) =>
- *     { field1: BuildData<Schema>; field2?: BuildData<Schema>; ... }
- * - Repeated(name, ItemSchema) => BuildData<ItemSchema>[]
- *
- * Notes:
- * - Optional fields are marked with '?' in the DSL and become optional properties.
- * - Keys are taken from each child schema's 'name' property.
- */
-type BuildDataConstructedFields<F extends readonly TLVSchema[]> = {
-  [Field in F[number] as Field extends { optional: true }
-    ? Field["name"]
-    : never]?: BuildData<Field>;
-} & {
-  [Field in F[number] as Field extends { optional: true }
-    ? never
-    : Field["name"]]: BuildData<Field>;
-};
+type BuildData<S extends TLVSchema> = S extends ConstructedTLVSchema
+  ? BuildDataFromConstructed<S>
+  : S extends RepeatedTLVSchema
+    ? BuildDataFromRepeated<S>
+    : S extends PrimitiveTLVSchema<string, unknown>
+      ? BuildDataFromPrimitive<S>
+      : never;
 
-/**
- * The build-time representation for a primitive schema is the input
- * value prior to encoding.
- */
-type BuildDataPrimitive<EncodedType> = EncodedType;
+type BuildDataFromConstructed<S> =
+  S extends ConstructedTLVSchema<string, infer Fields>
+    ? Fields extends readonly TLVSchema[]
+      ? {
+          // required fields
+          [K in Fields[number] as K["optional"] extends true
+            ? never
+            : K["name"]]: BuildData<K>;
+        } & {
+          // optional fields
+          [K in Fields[number] as K["optional"] extends true
+            ? K["name"]
+            : never]?: BuildData<K>;
+        }
+      : never
+    : never;
 
-/**
- * The build-time representation for a repeated schema is an array of
- * build-time values of its item schema.
- */
-type BuildDataRepeated<Item extends TLVSchema> = Array<BuildData<Item>>;
+// Recursively builds an array of items according to the item schema.
 
-/**
- * Maps a schema to its build-time data shape.
- * Broken down into aliases above for readability and tooling friendliness.
- */
-type BuildData<S extends TLVSchema> =
-  S extends ConstructedTLVSchema<string, infer F>
-    ? BuildDataConstructedFields<F>
-    : S extends PrimitiveTLVSchema<string, infer EncodedType>
-      ? BuildDataPrimitive<EncodedType>
-      : S extends RepeatedTLVSchema<string, infer Item>
-        ? BuildDataRepeated<Item>
-        : never;
+type BuildDataFromRepeated<S> =
+  S extends RepeatedTLVSchema<string, infer Item> ? BuildData<Item>[] : never;
+
+type BuildDataFromPrimitive<S> =
+  S extends PrimitiveTLVSchema<string, infer E> ? E : never;
 
 // Builds TLV payloads according to the provided schema definition.
 export declare class SchemaBuilder<S extends TLVSchema> {
