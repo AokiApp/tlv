@@ -1,7 +1,7 @@
 import { TagClass } from "../common/types.js";
 import { BasicTLVParser } from "./basic-parser.js";
 
-type DefaultEncodeType = ArrayBuffer;
+type DefaultDecodeType = ArrayBuffer;
 type SchemaOptions = {
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
@@ -34,7 +34,7 @@ interface TLVSchemaBase<N extends string = string> {
  */
 interface PrimitiveTLVSchema<
   N extends string = string,
-  DecodedType = DefaultEncodeType,
+  DecodedType = DefaultDecodeType,
 > extends TLVSchemaBase<N> {
   /**
    * Optional decode function for synchronous decoding.

@@ -48,3 +48,17 @@ export function decodeOffsets(buffer: ArrayBuffer): number[] {
 export type AssertTypeCompatible<T, U> = U extends T ? true : false;
 
 export function assertTypeTrue<T extends true>(_: T): void {}
+
+export function fromHexString(hexString: string): ArrayBuffer {
+  if (hexString.length % 2 !== 0) {
+    throw new Error("Invalid hex string");
+  }
+  const byteLength = hexString.length / 2;
+  const buffer = new ArrayBuffer(byteLength);
+  const uint8 = new Uint8Array(buffer);
+  for (let i = 0; i < byteLength; i++) {
+    const byteHex = hexString.substr(i * 2, 2);
+    uint8[i] = parseInt(byteHex, 16);
+  }
+  return buffer;
+}

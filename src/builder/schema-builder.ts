@@ -147,7 +147,7 @@ export class SchemaBuilder<S extends TLVSchema> {
     let value: ArrayBuffer;
     if (typeof schema.encode === "function") {
       // Cast is safe by contract of schema.encode contravariance
-      value = schema.encode(data as never);
+      value = schema.encode(data);
     } else {
       if (data instanceof ArrayBuffer) {
         value = data;
