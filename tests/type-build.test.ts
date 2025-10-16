@@ -55,4 +55,145 @@ describe("build-only type test (single large constructed schema)", () => {
 
     assert(true);
   });
+
+  it("compile-time: repeated constructed items type inference; runtime: build sample", () => {
+    const listSchema = BSchema.constructed("list", [
+      BSchema.repeated(
+        "items",
+        BSchema.constructed("item", [
+          BSchema.primitive("id", (n: number) => new ArrayBuffer(0)),
+          BSchema.primitive("name", (s: string) => new ArrayBuffer(0), { optional: true }),
+        ]),
+      ),
+    ]);
+
+    type ExpectedList = { items: { id: number; name?: string }[] };
+
+    const listBuilder = new SchemaBuilder(listSchema);
+
+    type ListParam = Parameters<typeof listBuilder.build>[0];
+    type _listMatches = AssertTypeCompatible<ListParam, ExpectedList>;
+    assertTypeTrue<_listMatches>(true);
+
+    try {
+      listBuilder.build({ items: [{ id: 1 }, { id: 2, name: "b" }] });
+    } catch {}
+
+    assert(true);
+  });
+
+  it("compile-time: only optional fields accept empty object; runtime: build empty", () => {
+    const optionalSchema = BSchema.constructed("optional", [
+      BSchema.primitive("a", (s: string) => new ArrayBuffer(0), { optional: true }),
+      BSchema.primitive("b", (n: number) => new ArrayBuffer(0), { optional: true }),
+    ]);
+
+    type ExpectedOptional = { a?: string; b?: number };
+    const optionalBuilder = new SchemaBuilder(optionalSchema);
+
+    type OptionalParam = Parameters<typeof optionalBuilder.build>[0];
+    type _optionalMatches = AssertTypeCompatible<OptionalParam, ExpectedOptional>;
+    assertTypeTrue<_optionalMatches>(true);
+
+    try {
+      optionalBuilder.build({});
+    } catch {}
+
+    assert(true);
+  });
+
+  it("compile-time: simple schema with ArrayBuffer and empty repeated array", () => {
+    const simpleSchema = BSchema.constructed("simple", [
+      BSchema.primitive("bitstring", (b: ArrayBuffer) => new ArrayBuffer(0)),
+      BSchema.repeated(
+        "tags",
+        BSchema.primitive("tag", (t: number) => new ArrayBuffer(0)),
+      ),
+    ]);
+
+    type ExpectedSimple = { bitstring: ArrayBuffer; tags: number[] };
+    const simpleBuilder = new SchemaBuilder(simpleSchema);
+
+    type SimpleParam = Parameters<typeof simpleBuilder.build>[0];
+    type _simpleMatches = AssertTypeCompatible<SimpleParam, ExpectedSimple>;
+    assertTypeTrue<_simpleMatches>(true);
+
+    try {
+      simpleBuilder.build({ bitstring: new ArrayBuffer(0), tags: [] });
+    } catch {}
+
+    assert(true);
+  });
+  
+  it("compile-time: deep nested constructed types; runtime: build sample", () => {
+    const deepSchema = BSchema.constructed("outer", [
+      BSchema.constructed("middle", [
+        BSchema.constructed("inner", [
+          BSchema.primitive("n", (x: number) => new ArrayBuffer(0)),
+          BSchema.primitive("flag", (b: boolean) => new ArrayBuffer(0), { optional: true }),
+        ]),
+      ]),
+    ]);
+
+    type ExpectedDeep = { middle: { inner: { n: number; flag?: boolean } } };
+    const deepBuilder = new SchemaBuilder(deepSchema);
+
+    type DeepParam = Parameters<typeof deepBuilder.build>[0];
+    type _deepMatches = AssertTypeCompatible<DeepParam, ExpectedDeep>;
+    assertTypeTrue<_deepMatches>(true);
+
+    try {
+      deepBuilder.build({ middle: { inner: { n: 1 } } });
+    } catch {}
+
+    assert(true);
+  });
+
+  it("compile-time: nested repeated with optional inner fields; runtime: build sample", () => {
+    const groupSchema = BSchema.constructed("groupList", [
+      BSchema.repeated("groups", BSchema.constructed("group", [
+        BSchema.primitive("name", (s: string) => new ArrayBuffer(0)),
+        BSchema.repeated("members", BSchema.constructed("member", [
+          BSchema.primitive("id", (n: number) => new ArrayBuffer(0)),
+          BSchema.primitive("active", (b: boolean) => new ArrayBuffer(0), { optional: true }),
+        ])),
+      ])),
+    ]);
+
+    type ExpectedGroup = {
+      groups: { name: string; members: { id: number; active?: boolean }[] }[];
+    };
+    const groupBuilder = new SchemaBuilder(groupSchema);
+
+    type GroupParam = Parameters<typeof groupBuilder.build>[0];
+    type _groupMatches = AssertTypeCompatible<GroupParam, ExpectedGroup>;
+    assertTypeTrue<_groupMatches>(true);
+
+    try {
+      groupBuilder.build({
+        groups: [{ name: "g1", members: [{ id: 1 }, { id: 2, active: true }] }],
+      });
+    } catch {}
+
+    assert(true);
+  });
+
+  it("compile-time: repeated primitive booleans; runtime: build sample", () => {
+    const boolsSchema = BSchema.constructed("bools", [
+      BSchema.repeated("flags", BSchema.primitive("flag", (b: boolean) => new ArrayBuffer(0))),
+    ]);
+
+    type ExpectedBools = { flags: boolean[] };
+    const boolsBuilder = new SchemaBuilder(boolsSchema);
+
+    type BoolsParam = Parameters<typeof boolsBuilder.build>[0];
+    type _boolsMatches = AssertTypeCompatible<BoolsParam, ExpectedBools>;
+    assertTypeTrue<_boolsMatches>(true);
+
+    try {
+      boolsBuilder.build({ flags: [true, false, true] });
+    } catch {}
+
+    assert(true);
+  });
 });
