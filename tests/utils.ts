@@ -44,3 +44,14 @@ export function decodeOffsets(buffer: ArrayBuffer): number[] {
   }
   return offsets;
 }
+
+export type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+export type AssertEqual<A, B> =
+  IsEqual<A, B> extends true ? true : ["TypeMismatch", A, B];
+
+export function assertType<A>(_: A): void {
+  // no runtime action needed
+}
