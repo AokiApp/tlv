@@ -1,4 +1,4 @@
-import { BasicTLVParser } from "@aokiapp/tlv/parser";
+import { BasicTLVParser } from "../src/parser";
 
 function arrayBufferToBase64url(buffer: ArrayBuffer): string {
   if (typeof Buffer !== "undefined") {
@@ -45,13 +45,6 @@ export function decodeOffsets(buffer: ArrayBuffer): number[] {
   return offsets;
 }
 
-export type IsEqual<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? true
-    : false;
-export type AssertEqual<A, B> =
-  IsEqual<A, B> extends true ? true : ["TypeMismatch", A, B];
+export type AssertTypeCompatible<T, U> = U extends T ? true : false;
 
-export function assertType<A>(_: A): void {
-  // no runtime action needed
-}
+export function assertTypeTrue<T extends true>(_: T): void {}

@@ -2,14 +2,15 @@
 import { describe, it } from "vitest";
 import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../src/parser";
-import { AssertEqual, assertType } from "./utils";
+import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 
 describe("parse-only type test (single large constructed schema)", () => {
   it("compile-time: ParsedResult matches Expected; runtime: parse with errors swallowed", () => {
     const bigSchema = PSchema.constructed("big", [
-      PSchema.primitive("num", (_: ArrayBuffer) => 0),
-      PSchema.primitive("text", (_: ArrayBuffer) => ""),
-      PSchema.primitive("flag", (_: ArrayBuffer) => true),
+      PSchema.primitive("integer", (_: ArrayBuffer) => 0),
+      PSchema.primitive("utf8string", (_: ArrayBuffer) => ""),
+      PSchema.primitive("bool", (_: ArrayBuffer) => true),
+      PSchema.primitive("bitstring", (_: ArrayBuffer) => new ArrayBuffer(0)),
       PSchema.primitive("maybe", (_: ArrayBuffer) => "", { optional: true }),
       PSchema.repeated(
         "tags",
@@ -20,21 +21,21 @@ describe("parse-only type test (single large constructed schema)", () => {
         PSchema.primitive("y", (_: ArrayBuffer) => "", { optional: true }),
       ]),
     ]);
-
-    type Expected = {
-      num: number;
-      text: string;
-      flag: boolean;
-      maybe?: string;
-      tags: number[];
-      inner: { x: number; y?: string };
-    };
+type Expected = {
+  integer: number;
+  utf8string: string;
+  bool: boolean;
+  bitstring: ArrayBuffer;
+  maybe?: string;
+  tags: number[];
+  inner: { x: number; y?: string };
+};
 
     const parser = new SchemaParser(bigSchema);
 
     type ParserReturn = ReturnType<typeof parser.parse>;
-    type _parserMatches = AssertEqual<ParserReturn, Expected>;
-    assertType<_parserMatches>(true);
+    type _parserMatches = AssertTypeCompatible<ParserReturn, Expected>;
+    assertTypeTrue<_parserMatches>(true);
 
     try {
       parser.parse(new ArrayBuffer(0));

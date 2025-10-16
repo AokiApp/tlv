@@ -36,8 +36,9 @@ interface PrimitiveTLVSchema<
 > extends TLVSchemaBase<N> {
   /**
    * Optional decode function for synchronous decoding.
+   * Use a method signature to improve assignability across unions.
    */
-  readonly decode?: (buffer: ArrayBuffer) => DecodedType;
+  decode?(buffer: ArrayBuffer): DecodedType;
 }
 
 /**
@@ -59,8 +60,8 @@ interface RepeatedTLVSchema<
   readonly item: Item;
 }
 
-type TLVSchema<N extends string = string> =
-  | PrimitiveTLVSchema<N, unknown>
+type TLVSchema<N extends string = string, D = unknown> =
+  | PrimitiveTLVSchema<N, D>
   | ConstructedTLVSchema<N, readonly TLVSchema[]>
   | RepeatedTLVSchema<N, TLVSchema>;
 

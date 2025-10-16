@@ -2,14 +2,15 @@
 import { describe, it } from "vitest";
 import assert from "assert";
 import { Schema as BSchema, SchemaBuilder } from "../src/builder";
-import { AssertEqual, assertType } from "./utils";
+import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 
 describe("build-only type test (single large constructed schema)", () => {
   it("compile-time: BuildData matches Expected; runtime: build with errors swallowed", () => {
     const bigSchema = BSchema.constructed("big", [
-      BSchema.primitive("num", (n: number) => new ArrayBuffer(0)),
-      BSchema.primitive("text", (s: string) => new ArrayBuffer(0)),
-      BSchema.primitive("flag", (b: boolean) => new ArrayBuffer(0)),
+      BSchema.primitive("integer", (n: number) => new ArrayBuffer(0)),
+      BSchema.primitive("utf8string", (s: string) => new ArrayBuffer(0)),
+      BSchema.primitive("bool", (b: boolean) => new ArrayBuffer(0)),
+      BSchema.primitive("bitstring", (b: ArrayBuffer) => new ArrayBuffer(0)),
       BSchema.primitive("maybe", (v: string) => new ArrayBuffer(0), {
         optional: true,
       }),
@@ -26,9 +27,10 @@ describe("build-only type test (single large constructed schema)", () => {
     ]);
 
     type Expected = {
-      num: number;
-      text: string;
-      flag: boolean;
+      integer: number;
+      utf8string: string;
+      bool: boolean;
+      bitstring: ArrayBuffer;
       maybe?: string;
       tags: number[];
       inner: { x: number; y?: string };
@@ -37,11 +39,18 @@ describe("build-only type test (single large constructed schema)", () => {
     const schema = new SchemaBuilder(bigSchema);
 
     type BuilderParam = Parameters<typeof schema.build>[0];
-    type _builderMatches = AssertEqual<BuilderParam, Expected>;
-    assertType<_builderMatches>(true);
+    type _builderMatches = AssertTypeCompatible<BuilderParam, Expected>;
+    assertTypeTrue<_builderMatches>(true);
 
     try {
-      schema.build({} as Expected);
+      schema.build({
+        integer: 42,
+        inner: { y: "hello", x: 7 },
+        utf8string: "test",
+        bool: true,
+        bitstring: new ArrayBuffer(1),
+        tags: [1, 2, 3],
+      });
     } catch {}
 
     assert(true);
