@@ -151,15 +151,15 @@ const SignedData_B = BuilderSchema.constructed(
       tagNumber: 2,
     }),
     // digestAlgorithms SEQUENCE OF AlgorithmIdentifier (demo-friendly; library also supports SET OF)
-    BuilderSchema.sequenceOf("digestAlgorithms", AlgorithmIdentifier_B, {
+    BuilderSchema.repeated("digestAlgorithms", AlgorithmIdentifier_B, {
       tagClass: TagClass.Universal,
-      tagNumber: 16,
+      tagNumber: 17,
     }),
     EncapsulatedContentInfo_B,
     // signerInfos SEQUENCE OF SignerInfo (demo-friendly; library also supports SET OF)
-    BuilderSchema.sequenceOf("signerInfos", SignerInfo_B, {
+    BuilderSchema.repeated("signerInfos", SignerInfo_B, {
       tagClass: TagClass.Universal,
-      tagNumber: 16,
+      tagNumber: 17,
     }),
   ],
   { tagClass: TagClass.Universal, tagNumber: 16 },
@@ -281,14 +281,14 @@ const SignedData_P = ParserSchema.constructed(
       tagClass: TagClass.Universal,
       tagNumber: 2,
     }),
-    ParserSchema.sequenceOf("digestAlgorithms", AlgorithmIdentifier_P, {
+    ParserSchema.repeated("digestAlgorithms", AlgorithmIdentifier_P, {
       tagClass: TagClass.Universal,
-      tagNumber: 16,
+      tagNumber: 17,
     }),
     EncapsulatedContentInfo_P,
-    ParserSchema.sequenceOf("signerInfos", SignerInfo_P, {
+    ParserSchema.repeated("signerInfos", SignerInfo_P, {
       tagClass: TagClass.Universal,
-      tagNumber: 16,
+      tagNumber: 17,
     }),
   ],
   { tagClass: TagClass.Universal, tagNumber: 16 },
@@ -315,6 +315,50 @@ export function buildContentInfoSignedDataDemo(): ArrayBuffer {
   const sid = new Uint8Array(20).fill(0xab);
   const contentBytes = new TextEncoder().encode("Hello CMS");
 
+  // Data for SET OF DigestAlgorithmIdentifiers and SET OF SignerInfos
+  const digestAlgorithmsData = [
+    { algorithm: ALGO_OIDS.sha256, paramsNull: null as null },
+  ];
+
+  const signerInfosData = [
+    {
+      version: 3,
+      sid,
+      digestAlgorithm: { algorithm: ALGO_OIDS.sha256, paramsNull: null as null },
+      signatureAlgorithm: { algorithm: ALGO_OIDS.rsaEncryption, paramsNull: null as null },
+      signature: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+    },
+    {
+      version: 3,
+      sid: new Uint8Array(20).fill(0xcd),
+      digestAlgorithm: { algorithm: ALGO_OIDS.sha256, paramsNull: null as null },
+      signatureAlgorithm: { algorithm: ALGO_OIDS.rsaEncryption, paramsNull: null as null },
+      signature: new Uint8Array([0xca, 0xfe, 0xba, 0xbe]),
+    },
+  ];
+
+  // Canonical DER sorting for SET OF containers (RFC 5652 / DER)
+  const algoBuilder = new SchemaBuilder(AlgorithmIdentifier_B);
+  const signerInfoBuilder = new SchemaBuilder(SignerInfo_B);
+
+  const compareDER = (a: Uint8Array, b: Uint8Array) => {
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return a.length - b.length;
+  };
+
+  const digestAlgorithmsSorted = digestAlgorithmsData
+    .map((d) => ({ d, der: new Uint8Array(algoBuilder.build(d)) }))
+    .sort((x, y) => compareDER(x.der, y.der))
+    .map((x) => x.d);
+
+  const signerInfosSorted = signerInfosData
+    .map((s) => ({ s, der: new Uint8Array(signerInfoBuilder.build(s)) }))
+    .sort((x, y) => compareDER(x.der, y.der))
+    .map((x) => x.s);
+
   const builder = new SchemaBuilder(ContentInfo_SignedData_B);
   const encoded = builder.build({
     contentType: CMS_OIDS.id_signedData,
@@ -322,46 +366,14 @@ export function buildContentInfoSignedDataDemo(): ArrayBuffer {
       signedData: {
         // MUST be 3 because we use subjectKeyIdentifier in SignerInfo (RFC 5652 Section 5.1)
         version: 3,
-        digestAlgorithms: [
-          {
-            algorithm: ALGO_OIDS.sha256,
-            paramsNull: null,
-          },
-        ],
+        digestAlgorithms: digestAlgorithmsSorted,
         encapContentInfo: {
           eContentType: CMS_OIDS.id_data,
           eContentWrap: {
             eContent: toArrayBuffer(contentBytes),
           },
         },
-        signerInfos: [
-          {
-            version: 3,
-            sid,
-            digestAlgorithm: {
-              algorithm: ALGO_OIDS.sha256,
-              paramsNull: null,
-            },
-            signatureAlgorithm: {
-              algorithm: ALGO_OIDS.rsaEncryption,
-              paramsNull: null,
-            },
-            signature: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
-          },
-          {
-            version: 3,
-            sid: new Uint8Array(20).fill(0xcd),
-            digestAlgorithm: {
-              algorithm: ALGO_OIDS.sha256,
-              paramsNull: null,
-            },
-            signatureAlgorithm: {
-              algorithm: ALGO_OIDS.rsaEncryption,
-              paramsNull: null,
-            },
-            signature: new Uint8Array([0xca, 0xfe, 0xba, 0xbe]),
-          },
-        ],
+        signerInfos: signerInfosSorted,
       },
     },
   });

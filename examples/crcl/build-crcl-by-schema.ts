@@ -37,16 +37,11 @@ const AttributeTypeAndValue_RAW = PSchema.constructed(
 );
 
 // RelativeDistinguishedName ::= SET { AttributeTypeAndValue }
-const RDN1_RAW = PSchema.constructed("rdn1", [AttributeTypeAndValue_RAW], {
-  tagNumber: 17,
-});
-const RDN2_RAW = PSchema.constructed("rdn2", [AttributeTypeAndValue_RAW], {
+const RDN_RAW = PSchema.constructed("rdn", [AttributeTypeAndValue_RAW], {
   tagNumber: 17,
 });
 
-const Name_RAW = PSchema.constructed("name", [RDN1_RAW, RDN2_RAW], {
-  tagNumber: 16,
-});
+const Name_RAW = PSchema.repeated("name", RDN_RAW, { tagNumber: 16 });
 
 const GeneralNameEmpty_RAW = PSchema.constructed("name", [], { tagNumber: 16 });
 
@@ -178,7 +173,7 @@ const CertReqMsg_RAW = PSchema.constructed(
 );
 
 // CertReqMessages (observed single entry) as plain SEQUENCE with one element
-const CertReqMessages_RAW = PSchema.constructed("certReq", [CertReqMsg_RAW], {
+const CertReqMessages_RAW = PSchema.repeated("certReq", CertReqMsg_RAW, {
   tagNumber: 16,
 });
 
@@ -206,16 +201,11 @@ const AttributeTypeAndValue_BUILD = BSchema.constructed(
   { tagNumber: 16 },
 );
 
-const RDN1_BUILD = BSchema.constructed("rdn1", [AttributeTypeAndValue_BUILD], {
-  tagNumber: 17,
-});
-const RDN2_BUILD = BSchema.constructed("rdn2", [AttributeTypeAndValue_BUILD], {
+const RDN_BUILD = BSchema.constructed("rdn", [AttributeTypeAndValue_BUILD], {
   tagNumber: 17,
 });
 
-const Name_BUILD = BSchema.constructed("name", [RDN1_BUILD, RDN2_BUILD], {
-  tagNumber: 16,
-});
+const Name_BUILD = BSchema.repeated("name", RDN_BUILD, { tagNumber: 16 });
 
 const GeneralNameEmpty_BUILD = BSchema.constructed("name", [], {
   tagNumber: 16,
@@ -347,9 +337,9 @@ const CertReqMsg_BUILD = BSchema.constructed(
   { tagNumber: 16 },
 );
 
-const CertReqMessages_BUILD = BSchema.constructed(
+const CertReqMessages_BUILD = BSchema.repeated(
   "certReq",
-  [CertReqMsg_BUILD],
+  CertReqMsg_BUILD,
   { tagNumber: 16 },
 );
 
@@ -374,7 +364,7 @@ async function main() {
 
   // 1) Parse to raw primitives (ArrayBuffer) by schema
   const parser = new Parser(PKIMessage_RAW, { strict: true });
-  const raw = parser.parseSync(der);
+  const raw = parser.parse(der);
 
   // 2) Build back using the mirror builder schema
   const builder = new SchemaBuilder(PKIMessage_BUILD, { strict: true });

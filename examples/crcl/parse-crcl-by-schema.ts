@@ -8,7 +8,7 @@
  * 4) Print a normalized result (ArrayBuffer/Uint8Array rendered as hex)
  *
  * References:
- * - README API for SchemaParser: SchemaParser.parseSync()
+ * - README API for SchemaParser: SchemaParser.parse()
  * - Schema helpers: Schema.primitive(), Schema.constructed()
  * - Basic TLV: BasicTLVParser.parse()
  */
@@ -85,7 +85,7 @@ function decodeRegisteredCorporationInfoExtension(buffer: ArrayBuffer) {
   );
 
   const nested = new SchemaParser(RegisteredCorporationInfoSyntax);
-  return nested.parseSync(buffer);
+  return nested.parse(buffer);
 }
 
 /**
@@ -139,9 +139,15 @@ const AttributeTypeAndValue = Schema.constructed(
   { tagNumber: 16 }, // SEQUENCE
 );
 
-const RelativeDistinguishedName = Schema.setOf("rdn", AttributeTypeAndValue);
+const RelativeDistinguishedName = Schema.repeated(
+  "rdn",
+  AttributeTypeAndValue,
+  { tagNumber: 17 },
+);
 
-const NameSequence = Schema.sequenceOf("name", RelativeDistinguishedName);
+const NameSequence = Schema.repeated("name", RelativeDistinguishedName, {
+  tagNumber: 16,
+});
 
 // GeneralName [4] containing Name (could be empty in header)
 const GeneralNameEmpty = Schema.constructed(
@@ -290,7 +296,9 @@ const CertReqMsg = Schema.constructed(
 );
 
 // CertReqMessages ::= SEQUENCE OF CertReqMsg (observed single entry)
-const CertReqMessages = Schema.sequenceOf("certReq", CertReqMsg);
+const CertReqMessages = Schema.repeated("certReq", CertReqMsg, {
+  tagNumber: 16,
+});
 
 // PKIBody [0]
 const BodySchema = Schema.constructed("body", [CertReqMessages], {
@@ -337,7 +345,7 @@ async function main() {
 
   // strict=false to accept any SET order if encountered
   const parser = new SchemaParser(PKIMessageSchema, { strict: true });
-  const parsed = parser.parseSync(derBuffer);
+  const parsed = parser.parse(derBuffer);
 
   const normalized = normalizeValue(parsed);
   console.log(JSON.stringify(normalized, null, 2));
