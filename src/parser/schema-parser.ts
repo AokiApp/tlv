@@ -6,6 +6,8 @@ type SchemaOptions = {
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
   readonly optional?: true;
+  readonly isSet?: boolean;
+  readonly enforceCanonical?: boolean;
 };
 
 type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
@@ -52,6 +54,8 @@ interface ConstructedTLVSchema<
   F extends readonly TLVSchema[] = readonly TLVSchema[],
 > extends TLVSchemaBase<N> {
   readonly fields: F;
+  readonly isSet?: boolean;
+  readonly enforceCanonical?: boolean;
 }
 
 // Describes a repeated TLV schema entry (e.g. SET/SEQUENCE OF).
@@ -132,7 +136,7 @@ export class SchemaParser<S extends TLVSchema> {
         `Top-level repeated schema '${schema.name}' is not supported. Wrap it in a constructed container.`,
       );
     }
-    return this.parsePrimitive(schema, buffer);
+    return this.parsePrimitive(schema , buffer);
   }
 
   private parsePrimitive(
@@ -189,14 +193,37 @@ export class SchemaParser<S extends TLVSchema> {
     }
 
     const inner = outer.value;
-    const out: Record<string, unknown> = {};
 
-    // If this constructed schema declares no child fields, treat it as an opaque container
-    // and accept any inner content without validation. This preserves placeholder containers
-    // like header.sender/recipient and certTemplate.subject used in examples.
+    // If this constructed schema declares no child fields, accept any inner content without validation.
+    // This preserves placeholder containers like header.sender/recipient and certTemplate.subject used in examples.
     if (schema.fields.length === 0) {
-      return out;
+      return {};
     }
+
+    // Determine SET vs SEQUENCE using explicit flag or tag inference (UNIVERSAL 17=SET, 16=SEQUENCE).
+    const treatAsSet =
+      typeof schema.isSet === "boolean"
+        ? schema.isSet
+        : Schema.inferIsSetFromTag(schema.tagClass, schema.tagNumber) === true;
+    if (treatAsSet) {
+      return this.parseConstructedSet(schema, inner);
+    }
+    return this.parseConstructedSequence(schema, inner);
+  }
+
+  /**
+   * Strict, linear SEQUENCE matching (unchanged behavior).
+   * - Consumes children in schema order
+   * - Optional fields may be skipped
+   * - Repeated fields consume zero or more consecutive matching children
+   * - Any mismatch immediately fails (independent of 'strict')
+   * - No extra children are allowed
+   */
+  private parseConstructedSequence(
+    schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
+    inner: ArrayBuffer,
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
 
     // Pre-initialize arrays for repeated fields (always present)
     for (const field of schema.fields) {
@@ -205,10 +232,6 @@ export class SchemaParser<S extends TLVSchema> {
       }
     }
 
-    // Strict, linear SEQUENCE matching:
-    // Iterate schema fields in order and require the next child TLV to match the expected tag.
-    // Optional fields may be skipped without consuming a child. Repeated fields consume
-    // zero or more consecutive matching children. Any mismatch immediately fails (independent of 'strict').
     let offset = 0;
     let fIdx = 0;
 
@@ -310,7 +333,10 @@ export class SchemaParser<S extends TLVSchema> {
         childTLV.tag.constructed === false
       ) {
         const childRaw = inner.slice(offset, offset + childTLV.endOffset);
-        const parsedValue = this.parsePrimitive(field, childRaw);
+        const parsedValue = this.parsePrimitive(
+          field ,
+          childRaw,
+        );
         out[field.name] = parsedValue;
         offset += childTLV.endOffset;
         fIdx++;
@@ -355,6 +381,146 @@ export class SchemaParser<S extends TLVSchema> {
     return out;
   }
 
+  /**
+   * SET parsing with order-independent matching and optional DER canonical validation.
+   * - Collects all child TLVs (raw bytes + TLV)
+   * - Immediately fails on unknown children (independent of 'strict')
+   * - Matches each schema field to at most one child based on tagClass, tagNumber, constructed
+   * - Fails when a required field is missing or leftover children remain
+   * - If enforceCanonical is true, verifies children raw bytes are sorted ascending (unsigned lexicographic)
+   * - Repeated fields in SET are out of scope and rejected
+   */
+  private parseConstructedSet(
+    schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
+    inner: ArrayBuffer,
+  ): Record<string, unknown> {
+    // Reject repeated fields in SET (SET OF will be handled in future extension)
+    for (const field of schema.fields) {
+      if (this.isRepeated(field)) {
+        throw new Error(
+          `Repeated field '${field.name}' is not supported in SET '${schema.name}'`,
+        );
+      }
+    }
+
+    // Collect children (raw + TLV)
+    const children: { raw: ArrayBuffer; tlv: ReturnType<typeof BasicTLVParser.parse> }[] = [];
+    {
+      let offset = 0;
+      while (offset < inner.byteLength) {
+        const slice = inner.slice(offset);
+        const childTLV = BasicTLVParser.parse(slice);
+        const childRaw = inner.slice(offset, offset + childTLV.endOffset);
+        children.push({ raw: childRaw, tlv: childTLV });
+        offset += childTLV.endOffset;
+      }
+    }
+
+    // Unknown child detection (independent of 'strict')
+    for (const c of children) {
+      const known = schema.fields.some((field) =>
+        this.matchesFieldTag(field, c.tlv.tag),
+      );
+      if (!known) {
+        throw new Error(
+          `Unknown child TLV tagClass=${c.tlv.tag.tagClass} tagNumber=${c.tlv.tag.tagNumber} in SET '${schema.name}'`,
+        );
+      }
+    }
+
+    // Optional canonical order validation
+    if (schema.enforceCanonical === true) {
+      for (let i = 1; i < children.length; i++) {
+        if (this.compareUnsignedLex(children[i - 1].raw, children[i].raw) > 0) {
+          throw new Error(
+            `DER canonical order violation in SET '${schema.name}': element at index ${i - 1} should come after index ${i}`,
+          );
+        }
+      }
+    }
+
+    // Field matching (at most one child per field)
+    const consumed = new Array(children.length).fill(false);
+    const out: Record<string, unknown> = {};
+
+    for (const field of schema.fields) {
+      let matchedIndex = -1;
+      for (let i = 0; i < children.length; i++) {
+        if (consumed[i]) continue;
+        const c = children[i];
+        if (this.matchesFieldTag(field, c.tlv.tag)) {
+          matchedIndex = i;
+          break;
+        }
+      }
+
+      if (matchedIndex === -1) {
+        if (!field.optional) {
+          throw new Error(
+            `Missing required property '${field.name}' in SET '${schema.name}'`,
+          );
+        }
+        continue;
+      }
+
+      const child = children[matchedIndex];
+      const parsed =
+        this.isConstructed(field)
+          ? this.parseConstructed(field, child.raw)
+          : this.parsePrimitive(
+              field ,
+              child.raw,
+            );
+
+      out[field.name] = parsed;
+      consumed[matchedIndex] = true;
+    }
+
+    // No leftover children permitted
+    const extraIdx = consumed.findIndex((v) => v === false);
+    if (extraIdx !== -1) {
+      const extraTag = children[extraIdx].tlv.tag;
+      throw new Error(
+        `Unexpected extra child TLV tagClass=${extraTag.tagClass} tagNumber=${extraTag.tagNumber} in SET '${schema.name}'`,
+      );
+    }
+
+    return out;
+  }
+
+  // Tag match utility for fields vs TLV child
+  private matchesFieldTag(
+    field: TLVSchema,
+    tag: { tagClass: TagClass; tagNumber: number; constructed: boolean },
+  ): boolean {
+    if (this.isRepeated(field)) {
+      // Repeated in SET is out of scope; treat as non-matching here.
+      return false;
+    }
+    const fieldClass = field.tagClass ?? TagClass.Universal;
+    const fieldNumber = field.tagNumber;
+    if (typeof fieldNumber !== "number") {
+      return false;
+    }
+    const fieldConstructed = this.isConstructed(field);
+    return (
+      tag.tagClass === fieldClass &&
+      tag.tagNumber === fieldNumber &&
+      tag.constructed === fieldConstructed
+    );
+  }
+
+  // Unsigned lexicographic comparator for raw DER bytes (a < b => negative, a > b => positive)
+  private compareUnsignedLex(a: ArrayBuffer, b: ArrayBuffer): number {
+    const ua = new Uint8Array(a);
+    const ub = new Uint8Array(b);
+    const len = Math.min(ua.length, ub.length);
+    for (let i = 0; i < len; i++) {
+      if (ua[i] !== ub[i]) return ua[i] - ub[i];
+    }
+    return ua.length - ub.length;
+  }
+
   private isConstructed(
     schema: TLVSchema,
   ): schema is ConstructedTLVSchema<string, readonly TLVSchema[]> {
@@ -373,6 +539,22 @@ export class SchemaParser<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors consumed by the parser.
 export class Schema {
+  /**
+   * Infer whether a constructed UNIVERSAL tag indicates SET or SEQUENCE.
+   * - Returns true for UNIVERSAL tagNumber 17 (SET)
+   * - Returns false for UNIVERSAL tagNumber 16 (SEQUENCE)
+   * - Returns undefined for other classes/numbers
+   */
+  static inferIsSetFromTag(tagClass?: TagClass, tagNumber?: number): boolean | undefined {
+    const cls = tagClass ?? TagClass.Universal;
+    if (typeof tagNumber !== "number") return undefined;
+    if (cls === TagClass.Universal) {
+      if (tagNumber === 17) return true;
+      if (tagNumber === 16) return false;
+    }
+    return undefined;
+  }
+
   static primitive<
     N extends string,
     D = ArrayBuffer,
@@ -415,6 +597,10 @@ export class Schema {
         ? { tagNumber: options.tagNumber }
         : {}),
       ...(options?.optional ? { optional: true as const } : {}),
+      ...(options?.isSet !== undefined ? { isSet: options.isSet } : {}),
+      ...(options?.enforceCanonical !== undefined
+        ? { enforceCanonical: options.enforceCanonical }
+        : {}),
     };
     return obj as ConstructedTLVSchema<N, F> & OptionalFlag<O>;
   }
