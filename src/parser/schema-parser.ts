@@ -191,6 +191,13 @@ export class SchemaParser<S extends TLVSchema> {
     const inner = outer.value;
     const out: Record<string, unknown> = {};
 
+    // If this constructed schema declares no child fields, treat it as an opaque container
+    // and accept any inner content without validation. This preserves placeholder containers
+    // like header.sender/recipient and certTemplate.subject used in examples.
+    if (schema.fields.length === 0) {
+      return out;
+    }
+
     // Pre-initialize arrays for repeated fields (always present)
     for (const field of schema.fields) {
       if (this.isRepeated(field)) {
@@ -198,97 +205,143 @@ export class SchemaParser<S extends TLVSchema> {
       }
     }
 
+    // Strict, linear SEQUENCE matching:
+    // Iterate schema fields in order and require the next child TLV to match the expected tag.
+    // Optional fields may be skipped without consuming a child. Repeated fields consume
+    // zero or more consecutive matching children. Any mismatch immediately fails (independent of 'strict').
     let offset = 0;
-    while (offset < inner.byteLength) {
-      const slice = inner.slice(offset);
-      const childTLV = BasicTLVParser.parse(slice);
-      const childRaw = inner.slice(offset, offset + childTLV.endOffset);
-      offset += childTLV.endOffset;
+    let fIdx = 0;
 
-      let handled = false;
+    while (fIdx < schema.fields.length) {
+      const field = schema.fields[fIdx];
 
-      for (const field of schema.fields) {
-        if (this.isRepeated(field)) {
-          const item = field.item;
-          const itemClass = item.tagClass ?? TagClass.Universal;
-          const itemNumber = item.tagNumber;
-          if (typeof itemNumber !== "number") {
-            throw new Error(
-              `Repeated field '${field.name}' item is missing tagNumber`,
-            );
-          }
-          const itemConstructed = this.isConstructed(item);
+      // Repeated field: consume zero or more consecutive children
+      if (this.isRepeated(field)) {
+        const item = field.item;
+        const itemClass = item.tagClass ?? TagClass.Universal;
+        const itemNumber = item.tagNumber;
+        if (typeof itemNumber !== "number") {
+          throw new Error(
+            `Repeated field '${field.name}' item is missing tagNumber`,
+          );
+        }
+        const itemConstructed = this.isConstructed(item);
 
+        while (offset < inner.byteLength) {
+          const slice = inner.slice(offset);
+          const childTLV = BasicTLVParser.parse(slice);
           if (
             childTLV.tag.tagClass === itemClass &&
             childTLV.tag.tagNumber === itemNumber &&
             childTLV.tag.constructed === itemConstructed
           ) {
+            const childRaw = inner.slice(offset, offset + childTLV.endOffset);
             const parsedItem = this.parseTopLevel(item, childRaw);
             (out[field.name] as unknown[]).push(parsedItem);
-            handled = true;
+            offset += childTLV.endOffset;
+          } else {
             break;
           }
-          continue;
         }
+        fIdx++;
+        continue;
+      }
 
-        if (this.isConstructed(field)) {
-          const fieldClass = field.tagClass ?? TagClass.Universal;
-          const fieldNumber = field.tagNumber;
-          if (typeof fieldNumber !== "number") {
-            throw new Error(
-              `Constructed field '${field.name}' is missing tagNumber`,
-            );
-          }
-          if (
-            childTLV.tag.tagClass === fieldClass &&
-            childTLV.tag.tagNumber === fieldNumber &&
-            childTLV.tag.constructed === true
-          ) {
-            const parsedChild = this.parseConstructed(field, childRaw);
-            out[field.name] = parsedChild;
-            handled = true;
-            break;
-          }
-          continue;
-        }
-
-        // Primitive child
-        const primClass = field.tagClass ?? TagClass.Universal;
-        const primNumber = field.tagNumber;
-        if (typeof primNumber !== "number") {
+      // Non-repeated field
+      if (offset >= inner.byteLength) {
+        // No more children; required field missing => fail immediately
+        if (!field.optional) {
           throw new Error(
-            `Primitive field '${field.name}' is missing tagNumber`,
+            `Missing required property '${field.name}' in constructed '${schema.name}'`,
+          );
+        }
+        // Optional: skip, proceed to next field
+        fIdx++;
+        continue;
+      }
+
+      const slice = inner.slice(offset);
+      const childTLV = BasicTLVParser.parse(slice);
+
+      if (this.isConstructed(field)) {
+        const fieldClass = field.tagClass ?? TagClass.Universal;
+        const fieldNumber = field.tagNumber;
+        if (typeof fieldNumber !== "number") {
+          throw new Error(
+            `Constructed field '${field.name}' is missing tagNumber`,
           );
         }
         if (
-          childTLV.tag.tagClass === primClass &&
-          childTLV.tag.tagNumber === primNumber &&
-          childTLV.tag.constructed === false
+          childTLV.tag.tagClass === fieldClass &&
+          childTLV.tag.tagNumber === fieldNumber &&
+          childTLV.tag.constructed === true
         ) {
-          const parsedValue = this.parsePrimitive(field, childRaw);
-          out[field.name] = parsedValue;
-          handled = true;
-          break;
+          const childRaw = inner.slice(offset, offset + childTLV.endOffset);
+          const parsedChild = this.parseConstructed(field, childRaw);
+          out[field.name] = parsedChild;
+          offset += childTLV.endOffset;
+          fIdx++;
+          continue;
         }
+
+        // Expected constructed field did not match
+        if (field.optional) {
+          // Skip the optional field (do not consume child), proceed to next schema field
+          fIdx++;
+          continue;
+        }
+        throw new Error(
+          `Sequence order mismatch in constructed '${schema.name}': expected constructed field '${field.name}' tagClass=${fieldClass} tagNumber=${fieldNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber}`,
+        );
       }
 
-      if (!handled) {
-        if (this.strict) {
-          throw new Error(
-            `Unknown child TLV with tagNumber=${childTLV.tag.tagNumber} in constructed '${schema.name}'`,
-          );
-        }
-        // non-strict: ignore unknown children
+      // Primitive field
+      const primClass = field.tagClass ?? TagClass.Universal;
+      const primNumber = field.tagNumber;
+      if (typeof primNumber !== "number") {
+        throw new Error(
+          `Primitive field '${field.name}' is missing tagNumber`,
+        );
       }
+
+      if (
+        childTLV.tag.tagClass === primClass &&
+        childTLV.tag.tagNumber === primNumber &&
+        childTLV.tag.constructed === false
+      ) {
+        const childRaw = inner.slice(offset, offset + childTLV.endOffset);
+        const parsedValue = this.parsePrimitive(field, childRaw);
+        out[field.name] = parsedValue;
+        offset += childTLV.endOffset;
+        fIdx++;
+        continue;
+      }
+
+      // Expected primitive field did not match
+      if (field.optional) {
+        // Skip optional field (do not consume child)
+        fIdx++;
+        continue;
+      }
+      throw new Error(
+        `Sequence order mismatch in constructed '${schema.name}': expected primitive field '${field.name}' tagClass=${primClass} tagNumber=${primNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber}`,
+      );
     }
 
-    // Enforce presence of required (non-optional) fields in strict mode.
+    // After consuming all schema fields, no extra children are allowed.
+    if (offset < inner.byteLength) {
+      const extraSlice = inner.slice(offset);
+      const extraTLV = BasicTLVParser.parse(extraSlice);
+      throw new Error(
+        `Unexpected extra child TLV tagClass=${extraTLV.tag.tagClass} tagNumber=${extraTLV.tag.tagNumber} in constructed '${schema.name}'`,
+      );
+    }
+
+    // Presence check (strict mode) retained for compatibility; most missing required fields are already caught above.
     if (this.strict) {
       for (const field of schema.fields) {
         const name = field.name;
         if (this.isRepeated(field)) {
-          // Always present because of pre-initialization
           continue;
         }
         if (!field.optional && out[name] === undefined) {
