@@ -1,6 +1,5 @@
 // tests/type-build.spec.ts
 import { describe, it } from "vitest";
-import assert from "assert";
 import { Schema as BSchema, SchemaBuilder } from "../src/builder";
 import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 
@@ -53,7 +52,6 @@ describe("build-only type test (single large constructed schema)", () => {
       });
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: repeated constructed items type inference; runtime: build sample", () => {
@@ -79,7 +77,6 @@ describe("build-only type test (single large constructed schema)", () => {
       listBuilder.build({ items: [{ id: 1 }, { id: 2, name: "b" }] });
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: only optional fields accept empty object; runtime: build empty", () => {
@@ -99,7 +96,6 @@ describe("build-only type test (single large constructed schema)", () => {
       optionalBuilder.build({});
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: simple schema with ArrayBuffer and empty repeated array", () => {
@@ -122,7 +118,6 @@ describe("build-only type test (single large constructed schema)", () => {
       simpleBuilder.build({ bitstring: new ArrayBuffer(0), tags: [] });
     } catch {}
 
-    assert(true);
   });
   
   it("compile-time: deep nested constructed types; runtime: build sample", () => {
@@ -146,7 +141,6 @@ describe("build-only type test (single large constructed schema)", () => {
       deepBuilder.build({ middle: { inner: { n: 1 } } });
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: nested repeated with optional inner fields; runtime: build sample", () => {
@@ -175,7 +169,6 @@ describe("build-only type test (single large constructed schema)", () => {
       });
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: repeated primitive booleans; runtime: build sample", () => {
@@ -194,6 +187,5 @@ describe("build-only type test (single large constructed schema)", () => {
       boolsBuilder.build({ flags: [true, false, true] });
     } catch {}
 
-    assert(true);
   });
 });

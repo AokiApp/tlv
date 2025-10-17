@@ -1,6 +1,5 @@
 // tests/type-parse.spec.ts
 import { describe, it } from "vitest";
-import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../src/parser";
 import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 
@@ -41,7 +40,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       parser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: repeated constructed items type inference; runtime: parse sample", () => {
@@ -67,7 +65,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       listParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: only optional fields accept empty result", () => {
@@ -90,7 +87,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       optionalParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: simple schema with ArrayBuffer and repeated numbers", () => {
@@ -113,7 +109,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       simpleParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: deep nested constructed types; runtime: parse sample", () => {
@@ -139,7 +134,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       deepParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: nested repeated with optional inner fields; runtime: parse sample", () => {
@@ -186,7 +180,6 @@ describe("parse-only type test (single large constructed schema)", () => {
       groupParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 
   it("compile-time: repeated primitive booleans; runtime: parse sample", () => {
@@ -208,6 +201,5 @@ describe("parse-only type test (single large constructed schema)", () => {
       boolsParser.parse(new ArrayBuffer(0));
     } catch {}
 
-    assert(true);
   });
 });
