@@ -385,23 +385,16 @@ export class SchemaParser<S extends TLVSchema> {
    * SET parsing with order-independent matching and optional DER canonical validation.
    * - Collects all child TLVs (raw bytes + TLV)
    * - Immediately fails on unknown children (independent of 'strict')
-   * - Matches each schema field to at most one child based on tagClass, tagNumber, constructed
+   * - Non-repeated fields: matches at most one child based on tagClass, tagNumber, constructed
+   * - Repeated fields: collects all matching children (SET OF) in any order
    * - Fails when a required field is missing or leftover children remain
    * - If enforceCanonical is true, verifies children raw bytes are sorted ascending (unsigned lexicographic)
-   * - Repeated fields in SET are out of scope and rejected
    */
   private parseConstructedSet(
     schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
     inner: ArrayBuffer,
   ): Record<string, unknown> {
-    // Reject repeated fields in SET (SET OF will be handled in future extension)
-    for (const field of schema.fields) {
-      if (this.isRepeated(field)) {
-        throw new Error(
-          `Repeated field '${field.name}' is not supported in SET '${schema.name}'`,
-        );
-      }
-    }
+    // Allow repeated fields (SET OF) in SET; handled below
 
     // Collect children (raw + TLV)
     const children: { raw: ArrayBuffer; tlv: ReturnType<typeof BasicTLVParser.parse> }[] = [];
@@ -439,11 +432,37 @@ export class SchemaParser<S extends TLVSchema> {
       }
     }
 
-    // Field matching (at most one child per field)
+    // Field matching:
+    // - Non-repeated fields: at most one matching child
+    // - Repeated fields: collect all matching children (SET OF)
     const consumed = new Array(children.length).fill(false);
     const out: Record<string, unknown> = {};
-
+  
     for (const field of schema.fields) {
+      if (this.isRepeated(field)) {
+        // Pre-initialize array result as in SEQUENCE behavior
+        out[field.name] = [];
+        const item = field.item;
+        for (let i = 0; i < children.length; i++) {
+          if (consumed[i]) continue;
+          const c = children[i];
+          if (this.matchesFieldTag(field, c.tlv.tag)) {
+            // Parse according to item schema
+            const parsedItem = this.parseTopLevel(item, c.raw);
+            (out[field.name] as unknown[]).push(parsedItem);
+            consumed[i] = true;
+          }
+        }
+        // If repeated field is required but no items matched, fail
+        if (!field.optional && (out[field.name] as unknown[]).length === 0) {
+          throw new Error(
+            `Missing required property '${field.name}' in SET '${schema.name}'`,
+          );
+        }
+        continue;
+      }
+  
+      // Non-repeated field
       let matchedIndex = -1;
       for (let i = 0; i < children.length; i++) {
         if (consumed[i]) continue;
@@ -453,7 +472,7 @@ export class SchemaParser<S extends TLVSchema> {
           break;
         }
       }
-
+  
       if (matchedIndex === -1) {
         if (!field.optional) {
           throw new Error(
@@ -462,16 +481,13 @@ export class SchemaParser<S extends TLVSchema> {
         }
         continue;
       }
-
+  
       const child = children[matchedIndex];
       const parsed =
         this.isConstructed(field)
           ? this.parseConstructed(field, child.raw)
-          : this.parsePrimitive(
-              field ,
-              child.raw,
-            );
-
+          : this.parsePrimitive(field, child.raw);
+  
       out[field.name] = parsed;
       consumed[matchedIndex] = true;
     }
@@ -493,9 +509,18 @@ export class SchemaParser<S extends TLVSchema> {
     field: TLVSchema,
     tag: { tagClass: TagClass; tagNumber: number; constructed: boolean },
   ): boolean {
+    // If field is repeated, compare against the item's tag
     if (this.isRepeated(field)) {
-      // Repeated in SET is out of scope; treat as non-matching here.
-      return false;
+      const item = field.item;
+      const itemClass = item.tagClass ?? TagClass.Universal;
+      const itemNumber = item.tagNumber;
+      if (typeof itemNumber !== "number") return false;
+      const itemConstructed = this.isConstructed(item);
+      return (
+        tag.tagClass === itemClass &&
+        tag.tagNumber === itemNumber &&
+        tag.constructed === itemConstructed
+      );
     }
     const fieldClass = field.tagClass ?? TagClass.Universal;
     const fieldNumber = field.tagNumber;
