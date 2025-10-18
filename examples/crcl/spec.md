@@ -287,3 +287,81 @@ notes:
     使用する数字は、JIS X 0201で定義される半角数字です。
     1桁の数字（例：3ヶ月）を記録する場合は、先頭に0を付けて「03」のように2桁で記録します。
     文字エンコーディングはShift_JISを使用します。
+
+# --- 参考文献 ---
+
+リファレンスとなるSHINSEI.derを解析した結果がこちら。参考になるかと思いますね。
+
+```
+UNIVERSAL 0 (constructed), length=875
+  SEQUENCE (constructed), length=871
+    SEQUENCE (constructed), length=11
+      INTEGER, length=1
+        INTEGER: 1
+      CONTEXT 4 (constructed), length=2
+        SEQUENCE (constructed), length=0
+      CONTEXT 4 (constructed), length=2
+        SEQUENCE (constructed), length=0
+    CONTEXT 0 (constructed), length=854
+      SEQUENCE (constructed), length=850
+        SEQUENCE (constructed), length=846
+          SEQUENCE (constructed), length=479
+            INTEGER, length=1
+              INTEGER: 0
+            SEQUENCE (constructed), length=472
+              CONTEXT 5 (constructed), length=44
+                SEQUENCE (constructed), length=42
+                  SET (constructed), length=21
+                    SEQUENCE (constructed), length=19
+                      OBJECT IDENTIFIER, length=3
+                        Hex: 55040a
+                      UTF8String, length=12
+                        String: "AokiApp Inc."
+                  SET (constructed), length=17
+                    SEQUENCE (constructed), length=15
+                      OBJECT IDENTIFIER, length=3
+                        Hex: 550403
+                      UTF8String, length=8
+                        String: "aokiyuki"
+              CONTEXT 6 (constructed), length=290
+                SEQUENCE (constructed), length=13
+                  OBJECT IDENTIFIER, length=9
+                    Hex: 2a864886f70d010101
+                  NULL, length=0
+                    Hex:
+                BIT STRING, length=271
+                  Hex: 003082010a0282010100b386eb55aacf3aacd24625273d84f3d721a6440d0534…
+              CONTEXT 9 (constructed), length=129
+                SEQUENCE (constructed), length=127
+                  OBJECT IDENTIFIER, length=9
+                    Hex: 2a8308868f4c010103
+                  OCTET STRING, length=114
+                    Hex: 3070a0180c168a948eae89ef8ed08260828f828b8289826082908290a2380c36…
+          CONTEXT 1 (constructed), length=276
+            SEQUENCE (constructed), length=13
+              OBJECT IDENTIFIER, length=9
+                Hex: 2a864886f70d01010b
+              NULL, length=0
+                Hex:
+            BIT STRING, length=257
+              Hex: 003c31ff07a3b89c09fd61369abf08f2bcedfaf9d85c23dca2ba09d037fccdb3…
+          SEQUENCE (constructed), length=81
+            SEQUENCE (constructed), length=62
+              OBJECT IDENTIFIER, length=9
+                Hex: 2a8308868f4c010269
+              SEQUENCE (constructed), length=49
+                SEQUENCE (constructed), length=13
+                  OBJECT IDENTIFIER, length=9
+                    Hex: 608648016503040201
+                  NULL, length=0
+                    Hex:
+                OCTET STRING, length=32
+                  Hex: 6cf615d5bcaac778352a8f1f3360d23f02f34ec182e259897fd6ce485d7870d4
+            SEQUENCE (constructed), length=15
+              OBJECT IDENTIFIER, length=9
+                Hex: 2a8308868f4c010268
+              OCTET STRING, length=2
+                Hex: 3237
+```
+
+IMPLICITタグはないと思います。あったとしても、tlvライブラリは固定の型という概念がなくコーデックに依存するので、Context Specificタグと正しいコーデックを指定すれば問題なく処理できるはずです。
