@@ -150,6 +150,13 @@ export class SchemaParser<S extends TLVSchema> {
       );
     }
 
+    // Enforce full buffer consumption at top-level when strict
+    if (this.strict && tlv.endOffset !== buffer.byteLength) {
+      throw new Error(
+        `Unexpected trailing bytes after TLV at offset ${tlv.endOffset} (buffer length ${buffer.byteLength}) for primitive '${schema.name}'`,
+      );
+    }
+
     return schema.decode(tlv.value);
   }
 
@@ -166,6 +173,13 @@ export class SchemaParser<S extends TLVSchema> {
     ) {
       throw new Error(
         `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
+      );
+    }
+
+    // Enforce full buffer consumption at top-level when strict
+    if (this.strict && outer.endOffset !== buffer.byteLength) {
+      throw new Error(
+        `Unexpected trailing bytes after TLV at offset ${outer.endOffset} (buffer length ${buffer.byteLength}) for constructed '${schema.name}'`,
       );
     }
 
