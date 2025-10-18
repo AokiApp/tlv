@@ -49,9 +49,17 @@ export class BasicTLVParser {
     if (tagNumber === 0x1f) {
       tagNumber = 0;
       let b: number;
+      const MAX_SAFE = Number.MAX_SAFE_INTEGER;
       do {
         b = view.getUint8(offset++);
-        tagNumber = (tagNumber << 7) | (b & 0x7f);
+        const base7 = b & 0x7f;
+        const potential = tagNumber * 128 + base7;
+        if (potential > MAX_SAFE) {
+          throw new Error(
+            `Long-form tag number exceeds JavaScript MAX_SAFE_INTEGER at offset ${offset - 1} (partial=${tagNumber}, next=${base7})`,
+          );
+        }
+        tagNumber = potential;
       } while (b & 0x80);
     }
     return {
