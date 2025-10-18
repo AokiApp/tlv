@@ -7,15 +7,15 @@ import {
   toArrayBuffer,
   encodeUtf8,
   decodeUtf8,
-  decodeAscii,
   decodeShiftJis,
+  decodeAscii,
   encodeInteger,
   decodeInteger,
   encodeOID,
   decodeOID,
   decodeBitStringHex,
   encodeBitString,
-} from "../src/utils/codecs";
+} from "../src/common/codecs";
 import {
   BasicTLVBuilder,
   SchemaBuilder,
