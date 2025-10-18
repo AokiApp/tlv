@@ -14,15 +14,17 @@ export class BasicTLVBuilder {
     const { tag, value } = tlv;
     const { tagClass, tagNumber, constructed } = tag;
 
-    if (tagNumber < 0 || tagNumber >= Number.MAX_SAFE_INTEGER) {
-      throw new Error("Tag number is out of valid range.");
+    if (!Number.isFinite(tagNumber) || tagNumber < 0 || tagNumber >= Number.MAX_SAFE_INTEGER) {
+      throw new Error(
+        `Invalid tagNumber: ${tagNumber}. Expected integer in range [0, ${Number.MAX_SAFE_INTEGER - 1}]`,
+      );
     }
     if (
       typeof tagClass !== "number" ||
       tagClass < TagClass.Universal ||
       tagClass > TagClass.Private
     ) {
-      throw new Error(`Invalid tag class: ${tagClass}`);
+      throw new Error(`Invalid tagClass: ${tagClass} (expected 0..3)`);
     }
 
     // 1. Encode Tag
@@ -66,7 +68,7 @@ export class BasicTLVBuilder {
       if (lenOfLenBytes.length > 126) {
         // The length of the length field can be at most 126 bytes in BER/DER.
         // (First byte is 0x80 | 126 = 0xFE). 0xFF is reserved.
-        throw new Error("Value is too long to be encoded.");
+        throw new Error(`Value length (${len}) too long to encode: length-of-length=${lenOfLenBytes.length} exceeds 126 (BER/DER limit)`);
       }
 
       lengthBytes.push(0x80 | lenOfLenBytes.length);

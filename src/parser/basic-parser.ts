@@ -76,7 +76,7 @@ export class BasicTLVParser {
       case 3:
         return TagClass.Private;
     }
-    throw new Error("Invalid tag class");
+    throw new Error(`Invalid tag class bits: ${bits} (expected 0..3)`);
   }
 
   /**
@@ -92,7 +92,7 @@ export class BasicTLVParser {
     const first = view.getUint8(offset++);
     // DER forbids indefinite length (0x80)
     if (first === 0x80) {
-      throw new Error("Indefinite length encoding is not allowed (DER)");
+      throw new Error(`Indefinite length (0x80) at offset ${offset - 1} is not allowed (DER)`);
     }
 
     let length: number;
@@ -122,7 +122,7 @@ export class BasicTLVParser {
   ) {
     const end = offset + length;
     if (end > buffer.byteLength) {
-      throw new Error("Declared length exceeds available bytes");
+      throw new Error(`Declared length ${length} at offset ${offset} exceeds available bytes (buffer length ${buffer.byteLength})`);
     }
     const value = buffer.slice(offset, end);
     return { value, newOffset: end };

@@ -149,7 +149,9 @@ export class SchemaParser<S extends TLVSchema> {
         tlv.tag.tagNumber !== schema.tagNumber ||
         tlv.tag.constructed
       ) {
-        throw new Error(`TLV tag mismatch for primitive '${schema.name}'`);
+        throw new Error(
+          `TLV tag mismatch for primitive '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=false; found class=${tlv.tag.tagClass} number=${tlv.tag.tagNumber} constructed=${tlv.tag.constructed})`,
+        );
       }
     }
 
@@ -169,7 +171,7 @@ export class SchemaParser<S extends TLVSchema> {
         !outer.tag.constructed
       ) {
         throw new Error(
-          `Container tag mismatch for constructed '${schema.name}'`,
+          `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
         );
       }
     }
@@ -279,7 +281,7 @@ export class SchemaParser<S extends TLVSchema> {
           continue;
         }
         throw new Error(
-          `Sequence order mismatch in constructed '${schema.name}': expected constructed field '${field.name}' tagClass=${field.tagClass} tagNumber=${field.tagNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber}`,
+          `Sequence order mismatch in constructed '${schema.name}': expected constructed field '${field.name}' tagClass=${field.tagClass} tagNumber=${field.tagNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber} constructed=${childTLV.tag.constructed}`,
         );
       }
 
@@ -305,7 +307,7 @@ export class SchemaParser<S extends TLVSchema> {
         continue;
       }
       throw new Error(
-        `Sequence order mismatch in constructed '${schema.name}': expected primitive field '${field.name}' tagClass=${field.tagClass} tagNumber=${field.tagNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber}`,
+        `Sequence order mismatch in constructed '${schema.name}': expected primitive field '${field.name}' tagClass=${field.tagClass} tagNumber=${field.tagNumber} but found tagClass=${childTLV.tag.tagClass} tagNumber=${childTLV.tag.tagNumber} constructed=${childTLV.tag.constructed}`,
       );
     }
 
@@ -314,7 +316,7 @@ export class SchemaParser<S extends TLVSchema> {
       const extraSlice = inner.slice(offset);
       const extraTLV = BasicTLVParser.parse(extraSlice);
       throw new Error(
-        `Unexpected extra child TLV tagClass=${extraTLV.tag.tagClass} tagNumber=${extraTLV.tag.tagNumber} in constructed '${schema.name}'`,
+        `Unexpected extra child TLV tagClass=${extraTLV.tag.tagClass} tagNumber=${extraTLV.tag.tagNumber} constructed=${extraTLV.tag.constructed} in constructed '${schema.name}'`,
       );
     }
 
@@ -373,7 +375,7 @@ export class SchemaParser<S extends TLVSchema> {
       );
       if (!known) {
         throw new Error(
-          `Unknown child TLV tagClass=${c.tlv.tag.tagClass} tagNumber=${c.tlv.tag.tagNumber} in SET '${schema.name}'`,
+          `Unknown child TLV tagClass=${c.tlv.tag.tagClass} tagNumber=${c.tlv.tag.tagNumber} constructed=${c.tlv.tag.constructed} in SET '${schema.name}'`,
         );
       }
     }
@@ -452,7 +454,7 @@ export class SchemaParser<S extends TLVSchema> {
     if (extraIdx !== -1) {
       const extraTag = children[extraIdx].tlv.tag;
       throw new Error(
-        `Unexpected extra child TLV tagClass=${extraTag.tagClass} tagNumber=${extraTag.tagNumber} in SET '${schema.name}'`,
+        `Unexpected extra child TLV tagClass=${extraTag.tagClass} tagNumber=${extraTag.tagNumber} constructed=${extraTag.constructed} in SET '${schema.name}'`,
       );
     }
 
