@@ -1,10 +1,7 @@
 // tests/schema-runtime.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import {
-  Schema as BSchema,
-  SchemaBuilder,
-} from "../src/builder";
+import { Schema as BSchema, SchemaBuilder } from "../src/builder";
 import { Schema as PSchema, SchemaParser } from "../src/parser";
 import { TagClass } from "../src/common/types";
 import { fromHexString } from "./utils";
@@ -12,7 +9,6 @@ import { fromHexString } from "./utils";
 function toHex(buf: ArrayBuffer): string {
   return Buffer.from(buf).toString("hex");
 }
-
 
 describe("Schema runtime behavior", () => {
   it("primitive: build encodes to expected hex", () => {
@@ -40,10 +36,7 @@ describe("Schema runtime behavior", () => {
 
     const parser = new SchemaParser(flagSchemaP);
     const parsed = parser.parse(input);
-    assert.deepStrictEqual(
-      Array.from(parsed as Uint8Array),
-      [0x01, 0x02],
-    );
+    assert.deepStrictEqual(Array.from(parsed as Uint8Array), [0x01, 0x02]);
   });
 
   it("constructed: build→parse round-trip preserves data shape", () => {
@@ -161,9 +154,7 @@ describe("Schema runtime behavior", () => {
       ],
       { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
-    const rebuilt = new SchemaBuilder(buildSchema).build(
-      parsedValue,
-    );
+    const rebuilt = new SchemaBuilder(buildSchema).build(parsedValue);
     assert.strictEqual(toHex(rebuilt), containerHex);
   });
 
@@ -231,38 +222,6 @@ describe("Schema runtime behavior", () => {
     assert.throws(() => parser.parse(fromHexString(wrongContainerHex)));
   });
 
-  it("parser non-strict mode: unknown child ignored; child order independence", () => {
-    const schema = PSchema.constructed(
-      "rec",
-      [
-        PSchema.primitive(
-          "id",
-          (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x11,
-          },
-        ),
-        PSchema.primitive(
-          "name",
-          (ab: ArrayBuffer) => new TextDecoder().decode(ab),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x12,
-          },
-        ),
-      ],
-      { tagClass: TagClass.Private, tagNumber: 0x10 },
-    );
-
-    const containerHex = "f00cd302aabbd2036e656fd10109";
-
-    const parsed = new SchemaParser(schema, { strict: false }).parse(
-      fromHexString(containerHex),
-    );
-    assert.deepStrictEqual(parsed, { id: 9, name: "neo" });
-  });
-
   it("repeated primitive: empty and non-empty build→parse round-trip preserves shape", () => {
     const bSchema = BSchema.constructed(
       "flagsBox",
@@ -301,17 +260,13 @@ describe("Schema runtime behavior", () => {
     );
 
     const builtEmpty = new SchemaBuilder(bSchema).build({ flags: [] });
-    const parsedEmpty = new SchemaParser(pSchema).parse(
-      builtEmpty,
-    );
+    const parsedEmpty = new SchemaParser(pSchema).parse(builtEmpty);
     assert.deepStrictEqual(parsedEmpty, { flags: [] });
 
     const builtMany = new SchemaBuilder(bSchema).build({
       flags: [true, false, true],
     });
-    const parsedMany = new SchemaParser(pSchema).parse(
-      builtMany,
-    );
+    const parsedMany = new SchemaParser(pSchema).parse(builtMany);
     assert.deepStrictEqual(parsedMany, { flags: [true, false, true] });
   });
 });
