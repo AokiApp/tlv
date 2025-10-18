@@ -6,6 +6,7 @@ type SchemaOptions = {
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
   readonly optional?: true;
+  readonly isSet?: boolean;
 };
 
 type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
@@ -20,8 +21,8 @@ type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
  */
 interface TLVSchemaBase<N extends string = string> {
   readonly name: N;
-  readonly tagClass?: TagClass;
-  readonly tagNumber?: number;
+  readonly tagClass: TagClass;
+  readonly tagNumber: number;
   /**
    * When present, this field is optional in a constructed container.
    */
@@ -52,9 +53,10 @@ interface ConstructedTLVSchema<
   F extends readonly TLVSchema[] = readonly TLVSchema[],
 > extends TLVSchemaBase<N> {
   readonly fields: F;
+  readonly isSet: boolean;
 }
 
-// Describes a repeated TLV schema entry (e.g. SEQUENCE OF).
+// Describes a repeated TLV schema entry (e.g. SEQUENCE/SET OF).
 interface RepeatedTLVSchema<
   N extends string = string,
   Item extends TLVSchema = TLVSchema,
@@ -138,11 +140,7 @@ export class SchemaBuilder<S extends TLVSchema> {
     schema: PrimitiveTLVSchema<string, unknown>,
     data: unknown,
   ): ArrayBuffer {
-    const tagClass = schema.tagClass ?? TagClass.Universal;
-    const { tagNumber } = schema;
-    if (typeof tagNumber !== "number") {
-      throw new Error(`Primitive field '${schema.name}' is missing tagNumber`);
-    }
+    const { tagNumber, tagClass } = schema;
 
     let value: ArrayBuffer;
     if (typeof schema.encode === "function") {
@@ -175,13 +173,7 @@ export class SchemaBuilder<S extends TLVSchema> {
     schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
     data: Record<string, unknown>,
   ): ArrayBuffer {
-    const tagClass = schema.tagClass ?? TagClass.Universal;
-    const { tagNumber } = schema;
-    if (typeof tagNumber !== "number") {
-      throw new Error(
-        `Constructed field '${schema.name}' is missing tagNumber`,
-      );
-    }
+    const { tagNumber, tagClass } = schema;
 
     const childBuffers: ArrayBuffer[] = [];
 
@@ -229,6 +221,11 @@ export class SchemaBuilder<S extends TLVSchema> {
       childBuffers.push(primTLV);
     }
 
+    // For SET, enforce DER canonical ordering of child TLVs
+    if (schema.isSet === true) {
+      childBuffers.sort((a, b) => this.compareUnsignedLex(a, b));
+    }
+
     const inner = this.concatBuffers(childBuffers);
     return BasicTLVBuilder.build({
       tag: { tagClass, constructed: true, tagNumber },
@@ -237,7 +234,6 @@ export class SchemaBuilder<S extends TLVSchema> {
       endOffset: 0,
     });
   }
-
   private isConstructed(
     schema: TLVSchema,
   ): schema is ConstructedTLVSchema<string, readonly TLVSchema[]> {
@@ -260,6 +256,17 @@ export class SchemaBuilder<S extends TLVSchema> {
     }
     return out.buffer;
   }
+
+  // Unsigned lexicographic comparator for raw DER bytes (a < b => negative, a > b => positive)
+  private compareUnsignedLex(a: ArrayBuffer, b: ArrayBuffer): number {
+    const ua = new Uint8Array(a);
+    const ub = new Uint8Array(b);
+    const len = Math.min(ua.length, ub.length);
+    for (let i = 0; i < len; i++) {
+      if (ua[i] !== ub[i]) return ua[i] - ub[i];
+    }
+    return ua.length - ub.length;
+  }
 }
 
 /**
@@ -267,6 +274,25 @@ export class SchemaBuilder<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors used by the builder.
 export class Schema {
+  /**
+   * Infer whether a constructed UNIVERSAL tag indicates SET or SEQUENCE.
+   * - Returns true for UNIVERSAL tagNumber 17 (SET)
+   * - Returns false for UNIVERSAL tagNumber 16 (SEQUENCE)
+   * - Returns undefined for other classes/numbers
+   */
+  static inferIsSetFromTag(
+    tagClass?: TagClass,
+    tagNumber?: number,
+  ): boolean | undefined {
+    const cls = tagClass ?? TagClass.Universal;
+    if (typeof tagNumber !== "number") return undefined;
+    if (cls === TagClass.Universal) {
+      if (tagNumber === 17) return true;
+      if (tagNumber === 16) return false;
+    }
+    return undefined;
+  }
+
   static primitive<
     N extends string,
     E = ArrayBuffer,
@@ -276,16 +302,16 @@ export class Schema {
     encode?: (data: E) => ArrayBuffer,
     options?: O,
   ): PrimitiveTLVSchema<N, E> & OptionalFlag<O> {
+    const tagNumber = options?.tagNumber;
+    if (typeof tagNumber !== "number") {
+      throw new Error(`Primitive schema '${name}' requires tagNumber`);
+    }
     const obj = {
       name,
       ...(encode ? { encode } : {}),
-      ...(options?.tagClass !== undefined
-        ? { tagClass: options.tagClass }
-        : {}),
-      ...(options?.tagNumber !== undefined
-        ? { tagNumber: options.tagNumber }
-        : {}),
-      ...(options?.optional ? { optional: true as const } : {}),
+      tagClass: options?.tagClass ?? TagClass.Universal,
+      tagNumber,
+      optional: options?.optional ? (true as const) : undefined,
     };
     return obj as PrimitiveTLVSchema<N, E> & OptionalFlag<O>;
   }
@@ -299,16 +325,20 @@ export class Schema {
     fields: F,
     options?: O,
   ): ConstructedTLVSchema<N, F> & OptionalFlag<O> {
+    const tagClassNormalized = options?.tagClass ?? TagClass.Universal;
+    const inferredIsSet =
+      options?.isSet !== undefined
+        ? options.isSet
+        : Schema.inferIsSetFromTag(tagClassNormalized, options?.tagNumber);
+    const inferredTagNumber = inferredIsSet ? 17 : 16;
+
     const obj = {
       name,
       fields,
-      ...(options?.tagClass !== undefined
-        ? { tagClass: options.tagClass }
-        : {}),
-      ...(options?.tagNumber !== undefined
-        ? { tagNumber: options.tagNumber }
-        : {}),
-      ...(options?.optional ? { optional: true as const } : {}),
+      tagClass: tagClassNormalized,
+      tagNumber: options?.tagNumber ?? inferredTagNumber,
+      optional: options?.optional ? (true as const) : undefined,
+      isSet: inferredIsSet,
     };
     return obj as ConstructedTLVSchema<N, F> & OptionalFlag<O>;
   }
@@ -325,13 +355,9 @@ export class Schema {
     const obj = {
       name,
       item,
-      ...(options?.tagClass !== undefined
-        ? { tagClass: options.tagClass }
-        : {}),
-      ...(options?.tagNumber !== undefined
-        ? { tagNumber: options.tagNumber }
-        : {}),
-      ...(options?.optional ? { optional: true as const } : {}),
+      tagClass: options?.tagClass ?? TagClass.Universal,
+      tagNumber: options?.tagNumber,
+      optional: options?.optional ? (true as const) : undefined,
     };
     return obj as RepeatedTLVSchema<N, Item> & OptionalFlag<O>;
   }

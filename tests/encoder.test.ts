@@ -63,7 +63,7 @@ describe("Encoder: SchemaBuilder.build() produces expected hex and handles failu
   });
 
   it("primitive without encode: wrong data type fails", () => {
-    const rawSchema = BSchema.primitive("raw");
+    const rawSchema = BSchema.primitive("raw", undefined, { tagNumber: 0x01 });
     const builder = new SchemaBuilder(rawSchema);
     assert.throws(() => builder.build(123 as any));
   });
