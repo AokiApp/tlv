@@ -276,10 +276,9 @@ describe("SchemaParser nested constructed and errors", () => {
   });
 
   it("throws when primitive schema is missing tagNumber", () => {
-    const prim = PSchema.primitive("raw", (buffer: ArrayBuffer) => buffer);
-    const parser = new SchemaParser(prim);
-    const tlv = fromHexString("0101aa");
-    assert.throws(() => parser.parse(tlv));
+    assert.throws(() =>
+      PSchema.primitive("raw", (buffer: ArrayBuffer) => buffer),
+    );
   });
 
   it("throws when constructed schema (container) is missing tagNumber", () => {

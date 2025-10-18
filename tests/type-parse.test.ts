@@ -6,20 +6,20 @@ import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 describe("parse-only type test (single large constructed schema)", () => {
   it("compile-time: ParsedResult matches Expected; runtime: parse with errors swallowed", () => {
     const bigSchema = PSchema.constructed("big", [
-      PSchema.primitive("integer", (_: ArrayBuffer) => 0),
-      PSchema.primitive("utf8string", (_: ArrayBuffer) => ""),
-      PSchema.primitive("bool", (_: ArrayBuffer) => true),
-      PSchema.primitive("bitstring", (_: ArrayBuffer) => new ArrayBuffer(0)),
-      PSchema.primitive("maybe", (_: ArrayBuffer) => "", { optional: true }),
+      PSchema.primitive("integer", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
+      PSchema.primitive("utf8string", (_: ArrayBuffer) => "", { tagNumber: 12 }),
+      PSchema.primitive("bool", (_: ArrayBuffer) => true, { tagNumber: 1 }),
+      PSchema.primitive("bitstring", (_: ArrayBuffer) => new ArrayBuffer(0), { tagNumber: 3 }),
+      PSchema.primitive("maybe", (_: ArrayBuffer) => "", { optional: true, tagNumber: 12 }),
       PSchema.repeated(
         "tags",
-        PSchema.primitive("tag", (_: ArrayBuffer) => 0),
+        PSchema.primitive("tag", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
       ),
       PSchema.constructed("inner", [
-        PSchema.primitive("x", (_: ArrayBuffer) => 0),
-        PSchema.primitive("y", (_: ArrayBuffer) => "", { optional: true }),
-      ]),
-    ]);
+        PSchema.primitive("x", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
+        PSchema.primitive("y", (_: ArrayBuffer) => "", { optional: true, tagNumber: 12 }),
+      ], { tagNumber: 16 }),
+    ], { tagNumber: 16 });
     type Expected = {
       integer: number;
       utf8string: string;
@@ -47,11 +47,11 @@ describe("parse-only type test (single large constructed schema)", () => {
       PSchema.repeated(
         "items",
         PSchema.constructed("item", [
-          PSchema.primitive("id", (_: ArrayBuffer) => 0),
-          PSchema.primitive("name", (_: ArrayBuffer) => "", { optional: true }),
-        ]),
+          PSchema.primitive("id", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
+          PSchema.primitive("name", (_: ArrayBuffer) => "", { optional: true, tagNumber: 12 }),
+        ], { tagNumber: 16 }),
       ),
-    ]);
+    ], { tagNumber: 16 });
 
     type ExpectedList = { items: { id: number; name?: string }[] };
 
@@ -69,9 +69,9 @@ describe("parse-only type test (single large constructed schema)", () => {
 
   it("compile-time: only optional fields accept empty result", () => {
     const optionalSchema = PSchema.constructed("optional", [
-      PSchema.primitive("a", (_: ArrayBuffer) => "", { optional: true }),
-      PSchema.primitive("b", (_: ArrayBuffer) => 0, { optional: true }),
-    ]);
+      PSchema.primitive("a", (_: ArrayBuffer) => "", { optional: true, tagNumber: 12 }),
+      PSchema.primitive("b", (_: ArrayBuffer) => 0, { optional: true, tagNumber: 2 }),
+    ], { tagNumber: 16 });
 
     type ExpectedOptional = { a?: string; b?: number };
     const optionalParser = new SchemaParser(optionalSchema);
@@ -91,12 +91,12 @@ describe("parse-only type test (single large constructed schema)", () => {
 
   it("compile-time: simple schema with ArrayBuffer and repeated numbers", () => {
     const simpleSchema = PSchema.constructed("simple", [
-      PSchema.primitive("bitstring", (_: ArrayBuffer) => new ArrayBuffer(0)),
+      PSchema.primitive("bitstring", (_: ArrayBuffer) => new ArrayBuffer(0), { tagNumber: 3 }),
       PSchema.repeated(
         "tags",
-        PSchema.primitive("tag", (_: ArrayBuffer) => 0),
+        PSchema.primitive("tag", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
       ),
-    ]);
+    ], { tagNumber: 16 });
 
     type ExpectedSimple = { bitstring: ArrayBuffer; tags: number[] };
     const simpleParser = new SchemaParser(simpleSchema);
@@ -115,13 +115,14 @@ describe("parse-only type test (single large constructed schema)", () => {
     const deepSchema = PSchema.constructed("outer", [
       PSchema.constructed("middle", [
         PSchema.constructed("inner", [
-          PSchema.primitive("n", (_: ArrayBuffer) => 0),
+          PSchema.primitive("n", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
           PSchema.primitive("flag", (_: ArrayBuffer) => true, {
             optional: true,
+            tagNumber: 1,
           }),
-        ]),
-      ]),
-    ]);
+        ], { tagNumber: 16 }),
+      ], { tagNumber: 16 }),
+    ], { tagNumber: 16 });
 
     type ExpectedDeep = { middle: { inner: { n: number; flag?: boolean } } };
     const deepParser = new SchemaParser(deepSchema);
@@ -141,19 +142,20 @@ describe("parse-only type test (single large constructed schema)", () => {
       PSchema.repeated(
         "groups",
         PSchema.constructed("group", [
-          PSchema.primitive("name", (_: ArrayBuffer) => ""),
+          PSchema.primitive("name", (_: ArrayBuffer) => "", { tagNumber: 12 }),
           PSchema.repeated(
             "members",
             PSchema.constructed("member", [
-              PSchema.primitive("id", (_: ArrayBuffer) => 0),
+              PSchema.primitive("id", (_: ArrayBuffer) => 0, { tagNumber: 2 }),
               PSchema.primitive("active", (_: ArrayBuffer) => true, {
                 optional: true,
+                tagNumber: 1,
               }),
-            ]),
+            ], { tagNumber: 16 }),
           ),
-        ]),
+        ], { tagNumber: 16 }),
       ),
-    ]);
+    ], { tagNumber: 16 });
 
     /**
      * groupList ::= SEQUENCE {
@@ -186,9 +188,9 @@ describe("parse-only type test (single large constructed schema)", () => {
     const boolsSchema = PSchema.constructed("bools", [
       PSchema.repeated(
         "flags",
-        PSchema.primitive("flag", (_: ArrayBuffer) => true),
+        PSchema.primitive("flag", (_: ArrayBuffer) => true, { tagNumber: 1 }),
       ),
-    ]);
+    ], { tagNumber: 16 });
 
     type ExpectedBools = { flags: boolean[] };
     const boolsParser = new SchemaParser(boolsSchema);
