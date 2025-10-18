@@ -108,10 +108,7 @@ export class SchemaParser<S extends TLVSchema> {
   public readonly schema: S;
   public readonly strict: boolean;
 
-  public constructor(
-    schema: S,
-    options?: { strict?: boolean },
-  ) {
+  public constructor(schema: S, options?: { strict?: boolean }) {
     this.schema = schema;
     this.strict = options?.strict ?? true;
   }
@@ -143,16 +140,14 @@ export class SchemaParser<S extends TLVSchema> {
   ): unknown {
     const tlv = BasicTLVParser.parse(buffer);
 
-    if (this.strict) {
-      if (
-        tlv.tag.tagClass !== schema.tagClass ||
-        tlv.tag.tagNumber !== schema.tagNumber ||
-        tlv.tag.constructed
-      ) {
-        throw new Error(
-          `TLV tag mismatch for primitive '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=false; found class=${tlv.tag.tagClass} number=${tlv.tag.tagNumber} constructed=${tlv.tag.constructed})`,
-        );
-      }
+    if (
+      tlv.tag.tagClass !== schema.tagClass ||
+      tlv.tag.tagNumber !== schema.tagNumber ||
+      tlv.tag.constructed
+    ) {
+      throw new Error(
+        `TLV tag mismatch for primitive '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=false; found class=${tlv.tag.tagClass} number=${tlv.tag.tagNumber} constructed=${tlv.tag.constructed})`,
+      );
     }
 
     return schema.decode(tlv.value);
@@ -164,16 +159,14 @@ export class SchemaParser<S extends TLVSchema> {
   ): Record<string, unknown> {
     const outer = BasicTLVParser.parse(buffer);
 
-    if (this.strict) {
-      if (
-        outer.tag.tagClass !== schema.tagClass ||
-        outer.tag.tagNumber !== schema.tagNumber ||
-        !outer.tag.constructed
-      ) {
-        throw new Error(
-          `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
-        );
-      }
+    if (
+      outer.tag.tagClass !== schema.tagClass ||
+      outer.tag.tagNumber !== schema.tagNumber ||
+      !outer.tag.constructed
+    ) {
+      throw new Error(
+        `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
+      );
     }
 
     const inner = outer.value;

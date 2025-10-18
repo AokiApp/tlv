@@ -197,8 +197,8 @@ export class SchemaBuilder<S extends TLVSchema> {
       childBuffers.push(primTLV);
     }
 
-    // For SET, enforce DER canonical ordering of child TLVs
-    if (schema.isSet === true) {
+    // For SET, enforce DER canonical ordering when strict=true; preserve input order when strict=false
+    if (schema.isSet === true && this.strict === true) {
       childBuffers.sort((a, b) => this.compareUnsignedLex(a, b));
     }
 

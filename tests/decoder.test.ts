@@ -1,4 +1,4 @@
- // tests/decoder.test.ts
+// tests/decoder.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../src/parser";

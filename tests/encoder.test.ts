@@ -60,3 +60,42 @@ describe("Encoder: SchemaBuilder.build() produces expected hex and handles failu
     assert.throws(() => builder.build(123 as any));
   });
 });
+describe("Builder SET ordering (strict gating)", () => {
+  it("strict=false: preserves input order in SET (no canonical sort)", () => {
+    const setSchema = BSchema.constructed(
+      "setBox",
+      { tagNumber: 17 }, // UNIVERSAL SET (inferred isSet=true)
+      [
+        // Intentionally place 'name' (UTF8String, 0x0C) before 'id' (INTEGER, 0x02)
+        BSchema.primitive("name", { tagNumber: 0x0c }, (s: string) => new TextEncoder().encode(s).buffer),
+        BSchema.primitive("id", { tagNumber: 0x02 }, (n: number) => new Uint8Array([n]).buffer),
+      ],
+    );
+
+    const builder = new SchemaBuilder(setSchema, { strict: false });
+    const built = builder.build({ id: 7, name: "a" });
+
+    // SET tag=0x31, length=0x06, children in schema order: 0c0161 020107
+    const expectedHex = "31060c0161020107";
+    assert.strictEqual(toHex(built), expectedHex);
+  });
+
+  it("strict=true: sorts SET to DER canonical order", () => {
+    const setSchema = BSchema.constructed(
+      "setBox",
+      { tagNumber: 17 }, // UNIVERSAL SET (inferred isSet=true)
+      [
+        // Same schema field order as above (name before id)
+        BSchema.primitive("name", { tagNumber: 0x0c }, (s: string) => new TextEncoder().encode(s).buffer),
+        BSchema.primitive("id", { tagNumber: 0x02 }, (n: number) => new Uint8Array([n]).buffer),
+      ],
+    );
+
+    const builder = new SchemaBuilder(setSchema, { strict: true });
+    const built = builder.build({ id: 7, name: "a" });
+
+    // SET tag=0x31, length=0x06, children sorted lex by raw TLV: 020107 0c0161
+    const expectedHex = "31060201070c0161";
+    assert.strictEqual(toHex(built), expectedHex);
+  });
+});
