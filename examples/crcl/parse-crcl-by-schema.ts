@@ -1,4 +1,4 @@
- /**
+/**
  * SHINSEI.der schema parsing example
  *
  * Steps:
@@ -27,7 +27,7 @@ import {
   decodeInteger,
   decodeOID,
   decodeBitStringHex,
-} from "../../src/utils/codecs.ts";
+} from "../../src/common/codecs.ts";
 
 function decodeRegisteredCorporationInfoExtension(buffer: ArrayBuffer) {
   // RegisteredCorporationInfoSyntax ::= SEQUENCE {
@@ -102,36 +102,30 @@ const RelativeDistinguishedName = Schema.constructed(
 );
 
 // Name ::= SEQUENCE OF RelativeDistinguishedName
-const Name = Schema.constructed(
-  "name",
-  { tagNumber: 16 },
-  [Schema.repeated("rdns", {}, RelativeDistinguishedName)],
-);
+const Name = Schema.constructed("name", { tagNumber: 16 }, [
+  Schema.repeated("rdns", {}, RelativeDistinguishedName),
+]);
 
 // --- Header ---
 
 // PKIHeader ::= SEQUENCE { pvno INTEGER(1), sender [4] GeneralName, recipient [4] GeneralName }
-const PKIHeader = Schema.constructed(
-  "header",
-  { tagNumber: 16 },
-  [
-    Schema.primitive("pvno", { tagNumber: 2 }, decodeInteger),
-    // GeneralName ([4]) -> Name (RDNSequence). Spec shows empty SEQUENCE in sample.
-    Schema.constructed(
-      "sender",
-      { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
-      [
-        // inner Name SEQUENCE (can be empty per observed DER)
-        Schema.constructed("name", { tagNumber: 16 }, []),
-      ],
-    ),
-    Schema.constructed(
-      "recipient",
-      { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
-      [Schema.constructed("name", { tagNumber: 16 }, [])],
-    ),
-  ],
-);
+const PKIHeader = Schema.constructed("header", { tagNumber: 16 }, [
+  Schema.primitive("pvno", { tagNumber: 2 }, decodeInteger),
+  // GeneralName ([4]) -> Name (RDNSequence). Spec shows empty SEQUENCE in sample.
+  Schema.constructed(
+    "sender",
+    { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+    [
+      // inner Name SEQUENCE (can be empty per observed DER)
+      Schema.constructed("name", { tagNumber: 16 }, []),
+    ],
+  ),
+  Schema.constructed(
+    "recipient",
+    { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+    [Schema.constructed("name", { tagNumber: 16 }, [])],
+  ),
+]);
 
 // --- CertTemplate ---
 
@@ -152,7 +146,11 @@ const RegisteredCorporationInfoExtension = Schema.constructed(
   [
     Schema.primitive("extnId", { tagNumber: 6 }, decodeOID),
     // OCTET STRING contents parsed by decodeRegisteredCorporationInfoExtension()
-    Schema.primitive("extnValue", { tagNumber: 4 }, decodeRegisteredCorporationInfoExtension),
+    Schema.primitive(
+      "extnValue",
+      { tagNumber: 4 },
+      decodeRegisteredCorporationInfoExtension,
+    ),
   ],
 );
 
@@ -163,27 +161,23 @@ const Extensions = Schema.constructed(
 );
 
 // CertTemplate ::= SEQUENCE { subject [5] Name OPTIONAL, publicKey [6] SubjectPublicKeyInfo, extensions [9] Extensions }
-const CertTemplate = Schema.constructed(
-  "certTemplate",
-  { tagNumber: 16 },
-  [
-    Schema.constructed("subject", { tagClass: TagClass.ContextSpecific, tagNumber: 5, optional: true }, [Name]),
-    SubjectPublicKeyInfo,
-    Extensions,
-  ],
-);
+const CertTemplate = Schema.constructed("certTemplate", { tagNumber: 16 }, [
+  Schema.constructed(
+    "subject",
+    { tagClass: TagClass.ContextSpecific, tagNumber: 5, optional: true },
+    [Name],
+  ),
+  SubjectPublicKeyInfo,
+  Extensions,
+]);
 
 // --- CertReqMsg ---
 
 // CertRequest ::= SEQUENCE { certReqId INTEGER(0), certTemplate CertTemplate }
-const CertRequest = Schema.constructed(
-  "certReq",
-  { tagNumber: 16 },
-  [
-    Schema.primitive("certReqId", { tagNumber: 2 }, decodeInteger),
-    CertTemplate,
-  ],
-);
+const CertRequest = Schema.constructed("certReq", { tagNumber: 16 }, [
+  Schema.primitive("certReqId", { tagNumber: 2 }, decodeInteger),
+  CertTemplate,
+]);
 
 // --- ProofOfPossession ([1] POPOSigningKey) ---
 
@@ -191,14 +185,10 @@ const POPOSigningKey = Schema.constructed(
   "pop",
   { tagClass: TagClass.ContextSpecific, tagNumber: 1 },
   [
-    Schema.constructed(
-      "algorithmIdentifier",
-      { tagNumber: 16 },
-      [
-        Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
-        Schema.primitive("parameters", { tagNumber: 5, optional: true }),
-      ],
-    ),
+    Schema.constructed("algorithmIdentifier", { tagNumber: 16 }, [
+      Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
+      Schema.primitive("parameters", { tagNumber: 5, optional: true }),
+    ]),
     Schema.primitive("signature", { tagNumber: 3 }, decodeBitStringHex),
   ],
 );
@@ -209,22 +199,14 @@ const POPOSigningKey = Schema.constructed(
 //   hashAlg AlgorithmIdentifier OPTIONAL,
 //   hashedSecretCode OCTET STRING
 // }
-const SuspensionSecretCode = Schema.constructed(
-  "value",
-  { tagNumber: 16 },
-  [
-    Schema.constructed(
-      "hashAlg",
-      { tagNumber: 16, optional: true },
-      [
-        Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
-        Schema.primitive("parameters", { tagNumber: 5, optional: true }),
-      ],
-    ),
-    // Render hashedSecretCode as hex for readability
-    Schema.primitive("hashedSecretCode", { tagNumber: 4 }, toHex),
-  ],
-);
+const SuspensionSecretCode = Schema.constructed("value", { tagNumber: 16 }, [
+  Schema.constructed("hashAlg", { tagNumber: 16, optional: true }, [
+    Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
+    Schema.primitive("parameters", { tagNumber: 5, optional: true }),
+  ]),
+  // Render hashedSecretCode as hex for readability
+  Schema.primitive("hashedSecretCode", { tagNumber: 4 }, toHex),
+]);
 
 // Attribute: suspensionSecretCode (OID: 1.2.392.100300.1.2.105)
 const SuspensionSecretCodeAttr = Schema.constructed(
@@ -234,14 +216,10 @@ const SuspensionSecretCodeAttr = Schema.constructed(
 );
 
 // Attribute: timeLimit (OID: 1.2.392.100300.1.2.104), value OCTET STRING with ASCII digits
-const TimeLimitAttr = Schema.constructed(
-  "timeLimit",
-  { tagNumber: 16 },
-  [
-    Schema.primitive("type", { tagNumber: 6 }, decodeOID),
-    Schema.primitive("value", { tagNumber: 4 }, decodeAscii),
-  ],
-);
+const TimeLimitAttr = Schema.constructed("timeLimit", { tagNumber: 16 }, [
+  Schema.primitive("type", { tagNumber: 6 }, decodeOID),
+  Schema.primitive("value", { tagNumber: 4 }, decodeAscii),
+]);
 
 // RegInfo ::= SEQUENCE { suspensionSecretCode AttributeTypeAndValue, timeLimit AttributeTypeAndValue }
 const RegInfo = Schema.constructed(
@@ -257,11 +235,11 @@ const RegInfo = Schema.constructed(
  *   regInfo  SEQUENCE OPTIONAL
  * }
  */
-const CertReqMsg = Schema.constructed(
-  "certReqMsg",
-  { tagNumber: 16 },
-  [CertRequest, POPOSigningKey, RegInfo],
-);
+const CertReqMsg = Schema.constructed("certReqMsg", { tagNumber: 16 }, [
+  CertRequest,
+  POPOSigningKey,
+  RegInfo,
+]);
 
 // --- Body ([0]) ---
 
@@ -269,21 +247,22 @@ const CertReqMsg = Schema.constructed(
  * CertReqMessages ::= SEQUENCE OF CertReqMsg
  * PKIBody ([0]) ::= SEQUENCE { certReq CertReqMessages }
  */
-const CertReqMessages = Schema.constructed(
-  "certReq",
-  { tagNumber: 16 },
-  [Schema.repeated("items", {}, CertReqMsg)],
-);
+const CertReqMessages = Schema.constructed("certReq", { tagNumber: 16 }, [
+  Schema.repeated("items", {}, CertReqMsg),
+]);
 
-const PKIBody = Schema.constructed("body", { tagClass: TagClass.ContextSpecific, tagNumber: 0 }, [CertReqMessages]);
+const PKIBody = Schema.constructed(
+  "body",
+  { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
+  [CertReqMessages],
+);
 
 // --- Top-level ---
 
-const PKIMessageSchema = Schema.constructed(
-  "PKIMessage",
-  { tagNumber: 16 },
-  [PKIHeader, PKIBody],
-);
+const PKIMessageSchema = Schema.constructed("PKIMessage", { tagNumber: 16 }, [
+  PKIHeader,
+  PKIBody,
+]);
 
 /**
  * Normalize result: convert ArrayBuffer or Uint8Array occurrences to hex

@@ -19,8 +19,8 @@
       "types": "./dist/builder/index.d.ts"
     },
     "./common": {
-      "import": "./dist/common/types.js",
-      "types": "./dist/common/types.d.ts"
+      "import": "./dist/common/index.js",
+      "types": "./dist/common/index.d.ts"
     }
   },
   "files": [
