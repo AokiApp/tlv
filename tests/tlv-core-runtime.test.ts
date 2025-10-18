@@ -1,4 +1,4 @@
-// tests/coverage-combined.test.ts
+ // tests/coverage-combined.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
 import {
@@ -184,10 +184,7 @@ describe("BasicTLVBuilder error branches", () => {
 
 describe("SchemaBuilder with no encoder (ArrayBuffer/Uint8Array paths)", () => {
   it("accepts ArrayBuffer when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", undefined, {
-      tagClass: TagClass.Universal,
-      tagNumber: 5,
-    });
+    const rawSchema = BSchema.primitive("raw", { tagClass: TagClass.Universal, tagNumber: 5 });
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([0xaa, 0xbb]).buffer;
     const built = builder.build(data);
@@ -197,10 +194,7 @@ describe("SchemaBuilder with no encoder (ArrayBuffer/Uint8Array paths)", () => {
   });
 
   it("accepts Uint8Array and copies bytes when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", undefined, {
-      tagClass: TagClass.Universal,
-      tagNumber: 6,
-    });
+    const rawSchema = BSchema.primitive("raw", { tagClass: TagClass.Universal, tagNumber: 6 });
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([1, 2, 3]);
     const built = builder.build(data.buffer);
@@ -214,19 +208,20 @@ describe("SchemaBuilder encodeConstructed with nested constructed field", () => 
   it("encodes nested constructed inner container", () => {
     const schema = BSchema.constructed(
       "outer",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         BSchema.constructed(
           "inner",
-          [
-            BSchema.primitive("x", (n: number) => new Uint8Array([n]).buffer, {
-              tagClass: TagClass.Private,
-              tagNumber: 0x11,
-            }),
-          ],
           { tagClass: TagClass.Private, tagNumber: 0x10 },
+          [
+            BSchema.primitive(
+              "x",
+              { tagClass: TagClass.Private, tagNumber: 0x11 },
+              (n: number) => new Uint8Array([n]).buffer,
+            ),
+          ],
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     const builder = new SchemaBuilder(schema);
@@ -239,10 +234,12 @@ describe("SchemaBuilder encodeConstructed with nested constructed field", () => 
   it("top-level repeated schema is not supported", () => {
     const rep = BSchema.repeated(
       "items",
-      BSchema.primitive("n", (n: number) => new Uint8Array([n]).buffer, {
-        tagClass: TagClass.Application,
-        tagNumber: 0x42,
-      }),
+      {},
+      BSchema.primitive(
+        "n",
+        { tagClass: TagClass.Application, tagNumber: 0x42 },
+        (n: number) => new Uint8Array([n]).buffer,
+      ),
     );
     const builder = new SchemaBuilder(rep as any);
     assert.throws(() => builder.build([1, 2, 3] as any));
@@ -253,20 +250,20 @@ describe("SchemaParser nested constructed and errors", () => {
   it("parses nested constructed inner container", () => {
     const parseSchema = PSchema.constructed(
       "outer",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.constructed(
           "inner",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
           [
             PSchema.primitive(
               "x",
-              (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
               { tagClass: TagClass.Private, tagNumber: 0x11 },
+              (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
             ),
           ],
-          { tagClass: TagClass.Private, tagNumber: 0x10 },
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     const outerTLV = fromHexString("ff2005f003d10105");
@@ -277,18 +274,22 @@ describe("SchemaParser nested constructed and errors", () => {
 
   it("throws when primitive schema is missing tagNumber", () => {
     assert.throws(() =>
-      PSchema.primitive("raw", (buffer: ArrayBuffer) => buffer),
+      PSchema.primitive("raw", (buffer: ArrayBuffer) => buffer as any),
     );
   });
 
   it("throws when constructed schema (container) is missing tagNumber", () => {
-    const constructed = PSchema.constructed("box", [
-      PSchema.primitive(
-        "x",
-        (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
-        { tagClass: TagClass.Private, tagNumber: 0x11 },
-      ),
-    ]);
+    const constructed = PSchema.constructed(
+      "box",
+      {},
+      [
+        PSchema.primitive(
+          "x",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
+          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
+        ),
+      ],
+    );
     const parser = new SchemaParser(constructed);
     const container = fromHexString("f003d10101");
     assert.throws(() => parser.parse(container));
@@ -303,23 +304,24 @@ describe("SchemaParser nested constructed and errors", () => {
   it("repeated constructed items produce array", () => {
     const schema = PSchema.constructed(
       "box",
+      { tagClass: TagClass.Private, tagNumber: 0x10 },
       [
         PSchema.repeated(
           "items",
+          {},
           PSchema.constructed(
             "item",
+            { tagClass: TagClass.Private, tagNumber: 0x20 },
             [
               PSchema.primitive(
                 "n",
-                (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
                 { tagClass: TagClass.Private, tagNumber: 0x21 },
+                (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
               ),
             ],
-            { tagClass: TagClass.Private, tagNumber: 0x20 },
           ),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x10 },
     );
 
     const makeItemHex = (n: number) => {
@@ -339,14 +341,14 @@ describe("SchemaParser nested constructed and errors", () => {
   it("strict unknown child throws", () => {
     const schema = PSchema.constructed(
       "rec",
+      { tagClass: TagClass.Private, tagNumber: 0x10 },
       [
         PSchema.primitive(
           "id",
-          (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
           { tagClass: TagClass.Private, tagNumber: 0x11 },
+          (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x10 },
     );
 
     const container = fromHexString("f004df6301ff");
@@ -358,8 +360,8 @@ describe("SchemaParser nested constructed and errors", () => {
   it("primitive strict mismatch on constructed tag throws", () => {
     const primSchema = PSchema.primitive(
       "n",
-      (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
       { tagClass: TagClass.Private, tagNumber: 0x41 },
+      (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
     );
     const constructedTLV = fromHexString("ff410109");
     const parser = new SchemaParser(primSchema, { strict: true });
@@ -369,8 +371,8 @@ describe("SchemaParser nested constructed and errors", () => {
   it("explicit decode-function path returns decoded value", () => {
     const primSchema = PSchema.primitive(
       "text",
-      (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
       { tagClass: TagClass.Application, tagNumber: 0x05 },
+      (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
     );
     const tlv = fromHexString("45026f6b");
     const parsed = new SchemaParser(primSchema).parse(tlv);

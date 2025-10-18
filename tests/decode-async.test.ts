@@ -1,4 +1,4 @@
-// tests/decode-async.test.ts
+ // tests/decode-async.test.ts
 import { describe, it, expect } from "vitest";
 import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../src/parser";
@@ -9,12 +9,12 @@ describe("Async decode: using Promise in decode callbacks with SchemaParser.pars
   it("primitive decode returns Promise<string> and can be awaited", async () => {
     const textSchema = PSchema.primitive(
       "text",
+      { tagClass: TagClass.Private, tagNumber: 0x01 },
       async (buffer: ArrayBuffer) => {
         // simulate async side effect
         await Promise.resolve();
         return new TextDecoder("utf-8").decode(buffer);
       },
-      { tagClass: TagClass.Private, tagNumber: 0x01 },
     );
     const tlv = fromHexString("c10568656c6c6f");
 
@@ -28,22 +28,22 @@ describe("Async decode: using Promise in decode callbacks with SchemaParser.pars
   it("constructed decode produces object containing Promise field(s), which can be resolved", async () => {
     const recSchema = PSchema.constructed(
       "rec",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.primitive(
           "id",
-          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
           { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
         ),
         PSchema.primitive(
           "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
           async (buffer: ArrayBuffer) => {
             await Promise.resolve();
             return new TextDecoder("utf-8").decode(buffer);
           },
-          { tagClass: TagClass.Private, tagNumber: 0x11 },
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     const container = fromHexString("ff200ad00107d105616c696365");
@@ -59,20 +59,21 @@ describe("Async decode: using Promise in decode callbacks with SchemaParser.pars
   it("repeated items with async decode return array of Promises that can be awaited", async () => {
     const listSchema = PSchema.constructed(
       "list",
+      { tagClass: TagClass.Private, tagNumber: 0x30 },
       [
         PSchema.repeated(
           "items",
+          {},
           PSchema.primitive(
             "item",
+            { tagClass: TagClass.Private, tagNumber: 0x31 },
             async (buffer: ArrayBuffer) => {
               await Promise.resolve();
               return new DataView(buffer).getUint8(0);
             },
-            { tagClass: TagClass.Private, tagNumber: 0x31 },
           ),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x30 },
     );
 
     const makeItemHex = (n: number) => {

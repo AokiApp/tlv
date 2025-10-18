@@ -1,4 +1,4 @@
-// tests/schema-runtime.test.ts
+ // tests/schema-runtime.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
 import { Schema as BSchema, SchemaBuilder } from "../src/builder";
@@ -12,10 +12,11 @@ function toHex(buf: ArrayBuffer): string {
 
 describe("Schema runtime behavior", () => {
   it("primitive: build encodes to expected hex", () => {
-    const flagSchemaB = BSchema.primitive("flag", (ab: ArrayBuffer) => ab, {
-      tagClass: TagClass.Private,
-      tagNumber: 0x01,
-    });
+    const flagSchemaB = BSchema.primitive(
+      "flag",
+      { tagClass: TagClass.Private, tagNumber: 0x01 },
+      (ab: ArrayBuffer) => ab,
+    );
 
     const builder = new SchemaBuilder(flagSchemaB);
     const input = new Uint8Array([0x01, 0x02]).buffer;
@@ -28,8 +29,8 @@ describe("Schema runtime behavior", () => {
   it("primitive: parse decodes to expected typed value", () => {
     const flagSchemaP = PSchema.primitive(
       "flag",
-      (buffer: ArrayBuffer) => new Uint8Array(buffer),
       { tagClass: TagClass.Private, tagNumber: 0x01 },
+      (buffer: ArrayBuffer) => new Uint8Array(buffer),
     );
 
     const input = fromHexString("c1020102");
@@ -42,28 +43,28 @@ describe("Schema runtime behavior", () => {
   it("constructed: build→parse round-trip preserves data shape", () => {
     const personSchemaB = BSchema.constructed(
       "person",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Private,
-          tagNumber: 0x10,
-        }),
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
         BSchema.primitive(
           "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
           (s: string) => new TextEncoder().encode(s).buffer,
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x11,
-          },
         ),
         BSchema.repeated(
           "tags",
-          BSchema.primitive("tag", (t: number) => new Uint8Array([t]).buffer, {
-            tagClass: TagClass.Private,
-            tagNumber: 0x12,
-          }),
+          {},
+          BSchema.primitive(
+            "tag",
+            { tagClass: TagClass.Private, tagNumber: 0x12 },
+            (t: number) => new Uint8Array([t]).buffer,
+          ),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     const data = { id: 7, name: "alice", tags: [1, 2] };
@@ -72,36 +73,28 @@ describe("Schema runtime behavior", () => {
 
     const personSchemaP = PSchema.constructed(
       "person",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.primitive(
           "id",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
           (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x10,
-          },
         ),
         PSchema.primitive(
           "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
           (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x11,
-          },
         ),
         PSchema.repeated(
           "tags",
+          {},
           PSchema.primitive(
             "tag",
+            { tagClass: TagClass.Private, tagNumber: 0x12 },
             (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
-            {
-              tagClass: TagClass.Private,
-              tagNumber: 0x12,
-            },
           ),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     const parser = new SchemaParser(personSchemaP);
@@ -114,45 +107,37 @@ describe("Schema runtime behavior", () => {
 
     const parseSchema = PSchema.constructed(
       "person",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.primitive(
           "id",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
           (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x10,
-          },
         ),
         PSchema.primitive(
           "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
           (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x11,
-          },
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
     const parsedValue = new SchemaParser(parseSchema).parse(container);
 
     const buildSchema = BSchema.constructed(
       "person",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Private,
-          tagNumber: 0x10,
-        }),
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
         BSchema.primitive(
           "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
           (s: string) => new TextEncoder().encode(s).buffer,
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x11,
-          },
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
     const rebuilt = new SchemaBuilder(buildSchema).build(parsedValue);
     assert.strictEqual(toHex(rebuilt), containerHex);
@@ -161,21 +146,19 @@ describe("Schema runtime behavior", () => {
   it("builder strict mode: missing required property throws", () => {
     const schema = BSchema.constructed(
       "rec",
+      { tagClass: TagClass.Application, tagNumber: 0x10 },
       [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Application,
-          tagNumber: 0x11,
-        }),
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Application, tagNumber: 0x11 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
         BSchema.primitive(
           "name",
+          { tagClass: TagClass.Application, tagNumber: 0x12 },
           (s: string) => new TextEncoder().encode(s).buffer,
-          {
-            tagClass: TagClass.Application,
-            tagNumber: 0x12,
-          },
         ),
       ],
-      { tagClass: TagClass.Application, tagNumber: 0x10 },
     );
 
     const builder = new SchemaBuilder(schema, { strict: true });
@@ -185,13 +168,14 @@ describe("Schema runtime behavior", () => {
   it("builder non-strict mode: extra property ignored (encodes only known fields)", () => {
     const schema = BSchema.constructed(
       "rec",
-      [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Private,
-          tagNumber: 0x01,
-        }),
-      ],
       { tagClass: TagClass.Private, tagNumber: 0x00 },
+      [
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Private, tagNumber: 0x01 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
+      ],
     );
 
     const builder = new SchemaBuilder(schema, { strict: false });
@@ -204,17 +188,14 @@ describe("Schema runtime behavior", () => {
   it("parser strict mode: container tag mismatch throws", () => {
     const schema = PSchema.constructed(
       "box",
+      { tagClass: TagClass.Private, tagNumber: 0x30 },
       [
         PSchema.primitive(
           "id",
+          { tagClass: TagClass.Private, tagNumber: 0x31 },
           (ab: ArrayBuffer) => new DataView(ab).getUint8(0),
-          {
-            tagClass: TagClass.Private,
-            tagNumber: 0x31,
-          },
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x30 },
     );
 
     const wrongContainerHex = "ff3203f10107";
@@ -225,38 +206,34 @@ describe("Schema runtime behavior", () => {
   it("repeated primitive: empty and non-empty build→parse round-trip preserves shape", () => {
     const bSchema = BSchema.constructed(
       "flagsBox",
+      { tagClass: TagClass.Application, tagNumber: 0x20 },
       [
         BSchema.repeated(
           "flags",
+          {},
           BSchema.primitive(
             "flag",
+            { tagClass: TagClass.Application, tagNumber: 0x21 },
             (b: boolean) => new Uint8Array([b ? 1 : 0]).buffer,
-            {
-              tagClass: TagClass.Application,
-              tagNumber: 0x21,
-            },
           ),
         ),
       ],
-      { tagClass: TagClass.Application, tagNumber: 0x20 },
     );
 
     const pSchema = PSchema.constructed(
       "flagsBox",
+      { tagClass: TagClass.Application, tagNumber: 0x20 },
       [
         PSchema.repeated(
           "flags",
+          {},
           PSchema.primitive(
             "flag",
+            { tagClass: TagClass.Application, tagNumber: 0x21 },
             (ab: ArrayBuffer) => new DataView(ab).getUint8(0) === 1,
-            {
-              tagClass: TagClass.Application,
-              tagNumber: 0x21,
-            },
           ),
         ),
       ],
-      { tagClass: TagClass.Application, tagNumber: 0x20 },
     );
 
     const builtEmpty = new SchemaBuilder(bSchema).build({ flags: [] });

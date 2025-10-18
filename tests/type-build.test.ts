@@ -1,29 +1,24 @@
-// tests/type-build.spec.ts
+ // tests/type-build.spec.ts
 import { describe, it } from "vitest";
 import { Schema as BSchema, SchemaBuilder } from "../src/builder";
 import { AssertTypeCompatible, assertTypeTrue } from "./utils";
 
 describe("build-only type test (single large constructed schema)", () => {
   it("compile-time: BuildData matches Expected; runtime: build with errors swallowed", () => {
-    const bigSchema = BSchema.constructed("big", [
-      BSchema.primitive("integer", (n: number) => new ArrayBuffer(0), { tagNumber: 0x02 }),
-      BSchema.primitive("utf8string", (s: string) => new ArrayBuffer(0), { tagNumber: 0x0c }),
-      BSchema.primitive("bool", (b: boolean) => new ArrayBuffer(0), { tagNumber: 0x01 }),
-      BSchema.primitive("bitstring", (b: ArrayBuffer) => new ArrayBuffer(0), { tagNumber: 0x03 }),
-      BSchema.primitive("maybe", (v: string) => new ArrayBuffer(0), {
-        optional: true,
-        tagNumber: 0x15,
-      }),
+    const bigSchema = BSchema.constructed("big", {}, [
+      BSchema.primitive("integer", { tagNumber: 0x02 }, (n: number) => new ArrayBuffer(0)),
+      BSchema.primitive("utf8string", { tagNumber: 0x0c }, (s: string) => new ArrayBuffer(0)),
+      BSchema.primitive("bool", { tagNumber: 0x01 }, (b: boolean) => new ArrayBuffer(0)),
+      BSchema.primitive("bitstring", { tagNumber: 0x03 }, (b: ArrayBuffer) => new ArrayBuffer(0)),
+      BSchema.primitive("maybe", { optional: true, tagNumber: 0x15 }, (v: string) => new ArrayBuffer(0)),
       BSchema.repeated(
         "tags",
-        BSchema.primitive("tag", (t: number) => new ArrayBuffer(0), { tagNumber: 0x16 }),
+        {},
+        BSchema.primitive("tag", { tagNumber: 0x16 }, (t: number) => new ArrayBuffer(0)),
       ),
-      BSchema.constructed("inner", [
-        BSchema.primitive("x", (x: number) => new ArrayBuffer(0), { tagNumber: 0x10 }),
-        BSchema.primitive("y", (y: string) => new ArrayBuffer(0), {
-          optional: true,
-          tagNumber: 0x11,
-        }),
+      BSchema.constructed("inner", {}, [
+        BSchema.primitive("x", { tagNumber: 0x10 }, (x: number) => new ArrayBuffer(0)),
+        BSchema.primitive("y", { optional: true, tagNumber: 0x11 }, (y: string) => new ArrayBuffer(0)),
       ]),
     ]);
 
@@ -53,16 +48,16 @@ describe("build-only type test (single large constructed schema)", () => {
         tags: [1, 2, 3],
       });
     } catch {}
-
   });
 
   it("compile-time: repeated constructed items type inference; runtime: build sample", () => {
-    const listSchema = BSchema.constructed("list", [
+    const listSchema = BSchema.constructed("list", {}, [
       BSchema.repeated(
         "items",
-        BSchema.constructed("item", [
-          BSchema.primitive("id", (n: number) => new ArrayBuffer(0), { tagNumber: 0x10 }),
-          BSchema.primitive("name", (s: string) => new ArrayBuffer(0), { optional: true, tagNumber: 0x11 }),
+        {},
+        BSchema.constructed("item", {}, [
+          BSchema.primitive("id", { tagNumber: 0x10 }, (n: number) => new ArrayBuffer(0)),
+          BSchema.primitive("name", { optional: true, tagNumber: 0x11 }, (s: string) => new ArrayBuffer(0)),
         ]),
       ),
     ]);
@@ -78,13 +73,12 @@ describe("build-only type test (single large constructed schema)", () => {
     try {
       listBuilder.build({ items: [{ id: 1 }, { id: 2, name: "b" }] });
     } catch {}
-
   });
 
   it("compile-time: only optional fields accept empty object; runtime: build empty", () => {
-    const optionalSchema = BSchema.constructed("optional", [
-      BSchema.primitive("a", (s: string) => new ArrayBuffer(0), { optional: true, tagNumber: 0x0c }),
-      BSchema.primitive("b", (n: number) => new ArrayBuffer(0), { optional: true, tagNumber: 0x02 }),
+    const optionalSchema = BSchema.constructed("optional", {}, [
+      BSchema.primitive("a", { optional: true, tagNumber: 0x0c }, (s: string) => new ArrayBuffer(0)),
+      BSchema.primitive("b", { optional: true, tagNumber: 0x02 }, (n: number) => new ArrayBuffer(0)),
     ]);
 
     type ExpectedOptional = { a?: string; b?: number };
@@ -97,15 +91,15 @@ describe("build-only type test (single large constructed schema)", () => {
     try {
       optionalBuilder.build({});
     } catch {}
-
   });
 
   it("compile-time: simple schema with ArrayBuffer and empty repeated array", () => {
-    const simpleSchema = BSchema.constructed("simple", [
-      BSchema.primitive("bitstring", (b: ArrayBuffer) => new ArrayBuffer(0), { tagNumber: 0x03 }),
+    const simpleSchema = BSchema.constructed("simple", {}, [
+      BSchema.primitive("bitstring", { tagNumber: 0x03 }, (b: ArrayBuffer) => new ArrayBuffer(0)),
       BSchema.repeated(
         "tags",
-        BSchema.primitive("tag", (t: number) => new ArrayBuffer(0), { tagNumber: 0x16 }),
+        {},
+        BSchema.primitive("tag", { tagNumber: 0x16 }, (t: number) => new ArrayBuffer(0)),
       ),
     ]);
 
@@ -119,15 +113,14 @@ describe("build-only type test (single large constructed schema)", () => {
     try {
       simpleBuilder.build({ bitstring: new ArrayBuffer(0), tags: [] });
     } catch {}
-
   });
-  
+
   it("compile-time: deep nested constructed types; runtime: build sample", () => {
-    const deepSchema = BSchema.constructed("outer", [
-      BSchema.constructed("middle", [
-        BSchema.constructed("inner", [
-          BSchema.primitive("n", (x: number) => new ArrayBuffer(0), { tagNumber: 0x02 }),
-          BSchema.primitive("flag", (b: boolean) => new ArrayBuffer(0), { optional: true, tagNumber: 0x01 }),
+    const deepSchema = BSchema.constructed("outer", {}, [
+      BSchema.constructed("middle", {}, [
+        BSchema.constructed("inner", {}, [
+          BSchema.primitive("n", { tagNumber: 0x02 }, (x: number) => new ArrayBuffer(0)),
+          BSchema.primitive("flag", { optional: true, tagNumber: 0x01 }, (b: boolean) => new ArrayBuffer(0)),
         ]),
       ]),
     ]);
@@ -142,18 +135,25 @@ describe("build-only type test (single large constructed schema)", () => {
     try {
       deepBuilder.build({ middle: { inner: { n: 1 } } });
     } catch {}
-
   });
 
   it("compile-time: nested repeated with optional inner fields; runtime: build sample", () => {
-    const groupSchema = BSchema.constructed("groupList", [
-      BSchema.repeated("groups", BSchema.constructed("group", [
-        BSchema.primitive("name", (s: string) => new ArrayBuffer(0), { tagNumber: 0x0c }),
-        BSchema.repeated("members", BSchema.constructed("member", [
-          BSchema.primitive("id", (n: number) => new ArrayBuffer(0), { tagNumber: 0x02 }),
-          BSchema.primitive("active", (b: boolean) => new ArrayBuffer(0), { optional: true, tagNumber: 0x01 }),
-        ])),
-      ])),
+    const groupSchema = BSchema.constructed("groupList", {}, [
+      BSchema.repeated(
+        "groups",
+        {},
+        BSchema.constructed("group", {}, [
+          BSchema.primitive("name", { tagNumber: 0x0c }, (s: string) => new ArrayBuffer(0)),
+          BSchema.repeated(
+            "members",
+            {},
+            BSchema.constructed("member", {}, [
+              BSchema.primitive("id", { tagNumber: 0x02 }, (n: number) => new ArrayBuffer(0)),
+              BSchema.primitive("active", { optional: true, tagNumber: 0x01 }, (b: boolean) => new ArrayBuffer(0)),
+            ]),
+          ),
+        ]),
+      ),
     ]);
 
     type ExpectedGroup = {
@@ -170,12 +170,11 @@ describe("build-only type test (single large constructed schema)", () => {
         groups: [{ name: "g1", members: [{ id: 1 }, { id: 2, active: true }] }],
       });
     } catch {}
-
   });
 
   it("compile-time: repeated primitive booleans; runtime: build sample", () => {
-    const boolsSchema = BSchema.constructed("bools", [
-      BSchema.repeated("flags", BSchema.primitive("flag", (b: boolean) => new ArrayBuffer(0), { tagNumber: 0x01 })),
+    const boolsSchema = BSchema.constructed("bools", {}, [
+      BSchema.repeated("flags", {}, BSchema.primitive("flag", { tagNumber: 0x01 }, (b: boolean) => new ArrayBuffer(0))),
     ]);
 
     type ExpectedBools = { flags: boolean[] };
@@ -188,6 +187,5 @@ describe("build-only type test (single large constructed schema)", () => {
     try {
       boolsBuilder.build({ flags: [true, false, true] });
     } catch {}
-
   });
 });

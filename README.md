@@ -55,8 +55,8 @@ import { TagClass } from "@aokiapp/tlv/common";
 
 const schema = Schema.primitive(
   "name",
-  (buf: ArrayBuffer) => new TextDecoder().decode(buf),
   { tagClass: TagClass.Universal, tagNumber: 0x0c },
+  (buf: ArrayBuffer) => new TextDecoder().decode(buf),
 );
 const parser = new SchemaParser(schema, { strict: true });
 const parsed = parser.parse(buffer); // string | Promise<string> depending on your decode
@@ -73,9 +73,9 @@ console.log(parsed);
   - `new SchemaParser(schema: S, options?: { strict?: boolean })`
   - `parse(buffer: ArrayBuffer): ParsedResult<S>` (can contain Promises if decoders are async)
 - Schema: Static helpers for schema construction:
-  - `Schema.primitive(name, decode?, { tagClass, tagNumber, optional? })`
-  - `Schema.constructed(name, fields, { tagClass, tagNumber, optional? })`
-  - `Schema.repeated(name, item, { tagClass, tagNumber, optional? })`
+  - `Schema.primitive(name, options, decode?)`
+  - `Schema.constructed(name, options, fields)`
+  - `Schema.repeated(name, options, item)`
 
 ### Builder (`@aokiapp/tlv/builder`)
 
@@ -85,9 +85,9 @@ console.log(parsed);
   - `new SchemaBuilder(schema: S, options?: { strict?: boolean })`
   - `build(data: BuildData<S>): ArrayBuffer`
 - Schema: Static helpers for schema construction:
-  - `Schema.primitive(name, encode?, { tagClass, tagNumber, optional? })`
-  - `Schema.constructed(name, fields, { tagClass, tagNumber, optional? })`
-  - `Schema.repeated(name, item, { tagClass, tagNumber, optional? })`
+  - `Schema.primitive(name, options, encode?)`
+  - `Schema.constructed(name, options, fields)`
+  - `Schema.repeated(name, options, item)`
 
 ### Common Types (`@aokiapp/tlv/common`)
 
@@ -118,9 +118,9 @@ Parse TLV data based on a schema. If a primitive's `decode` returns a Promise, t
 
 #### Schema
 
-[`Schema.primitive<N, D>(name: N, decode?, options)`](src/parser/schema-parser.ts:323)
-[`Schema.constructed<N, F>(name: N, fields: F, options?)`](src/parser/schema-parser.ts:346)
-[`Schema.repeated<N, Item>(name: N, item: Item, options?)`](src/parser/schema-parser.ts:369)
+[`Schema.primitive<N, D>(name: N, options, decode?)`](src/parser/schema-parser.ts:112)
+[`Schema.constructed<N, F>(name: N, options, fields)`](src/parser/schema-parser.ts:546)
+[`Schema.repeated<N, Item>(name: N, options, item)`](src/parser/schema-parser.ts:605)
 Helpers for building schema objects.
 
 ### Builder
@@ -175,19 +175,19 @@ import { TagClass } from "@aokiapp/tlv/common";
 
 const personSchema = Schema.constructed(
   "person",
+  { tagClass: TagClass.Private, tagNumber: 0x20 },
   [
     Schema.primitive(
       "age",
-      (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
       { tagClass: TagClass.Private, tagNumber: 0x10 },
+      (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
     ),
     Schema.primitive(
       "name",
-      (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
       { tagClass: TagClass.Private, tagNumber: 0x11 },
+      (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
     ),
   ],
-  { tagClass: TagClass.Private, tagNumber: 0x20 },
 );
 
 const buffer = /* TLV-encoded ArrayBuffer for person */;
@@ -204,11 +204,11 @@ import { TagClass } from "@aokiapp/tlv/common";
 
 const textSchema = Schema.primitive(
   "text",
+  { tagClass: TagClass.Private, tagNumber: 0x01 },
   async (buffer: ArrayBuffer) => {
     await Promise.resolve();
     return new TextDecoder("utf-8").decode(buffer);
   },
-  { tagClass: TagClass.Private, tagNumber: 0x01 },
 );
 
 const parser = new SchemaParser(textSchema);
@@ -240,19 +240,19 @@ import { TagClass } from "@aokiapp/tlv/common";
 
 const personSchema = Schema.constructed(
   "person",
+  { tagClass: TagClass.Private, tagNumber: 0x20 },
   [
     Schema.primitive(
       "id",
-      (n: number) => new Uint8Array([n]).buffer,
       { tagClass: TagClass.Private, tagNumber: 0x10 },
+      (n: number) => new Uint8Array([n]).buffer,
     ),
     Schema.primitive(
       "name",
-      (s: string) => new TextEncoder().encode(s).buffer,
       { tagClass: TagClass.Private, tagNumber: 0x11 },
+      (s: string) => new TextEncoder().encode(s).buffer,
     ),
   ],
-  { tagClass: TagClass.Private, tagNumber: 0x20 },
 );
 
 const builder = new SchemaBuilder(personSchema);
@@ -267,8 +267,8 @@ console.log(new Uint8Array(built));
   - Builder: `strict: true` requires all non-optional fields; with `strict: false`, extra properties are ignored.
 - Top-level repeated schemas are not supported. Wrap repeated items in a constructed container.
 - Primitive fallback:
-  - Parser without `decode`: returns raw `ArrayBuffer`.
-  - Builder without `encode`: data must be `ArrayBuffer` or `Uint8Array`.
+  - Parser without `decode`: returns raw `ArrayBuffer` (default identity decode).
+  - Builder without `encode`: input must be `ArrayBuffer` (provide an `encode` to convert non-ArrayBuffer types like `Uint8Array`).
 - Length handling: Encoded length is derived from the value bytes; indefinite length is rejected.
 
 ## License

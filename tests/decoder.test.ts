@@ -1,4 +1,4 @@
-// tests/decoder.test.ts
+ // tests/decoder.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../src/parser";
@@ -13,8 +13,8 @@ describe("Decoder: SchemaParser.parse() parses hex to expected object and handle
 
     const flagSchema = PSchema.primitive(
       "flag",
-      (buffer: ArrayBuffer) => new Uint8Array(buffer),
       { tagClass: TagClass.Private, tagNumber: 0x01 },
+      (buffer: ArrayBuffer) => new Uint8Array(buffer),
     );
 
     const parser = new SchemaParser(flagSchema, { strict: true });
@@ -25,19 +25,19 @@ describe("Decoder: SchemaParser.parse() parses hex to expected object and handle
   it("constructed: parse from hex string equals expected object", () => {
     const personSchema = PSchema.constructed(
       "person",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.primitive(
           "id",
-          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
           { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
         ),
         PSchema.primitive(
           "name",
-          (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
           { tagClass: TagClass.Private, tagNumber: 0x11 },
+          (buffer: ArrayBuffer) => new TextDecoder("utf-8").decode(buffer),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     // Parse from direct hex literal (Private constructed tag 0x20 with high-tag-number)
@@ -49,14 +49,14 @@ describe("Decoder: SchemaParser.parse() parses hex to expected object and handle
   it("strict mode: tag mismatch throws on parse", () => {
     const boxSchema = PSchema.constructed(
       "box",
+      { tagClass: TagClass.Private, tagNumber: 0x30 },
       [
         PSchema.primitive(
           "id",
-          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
           { tagClass: TagClass.Private, tagNumber: 0x31 },
+          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x30 },
     );
 
     const hex = "ff3203f10107";
@@ -67,19 +67,19 @@ describe("Decoder: SchemaParser.parse() parses hex to expected object and handle
   it("strict mode: missing required child throws", () => {
     const recSchema = PSchema.constructed(
       "rec",
+      { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
         PSchema.primitive(
           "id",
-          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
           { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (buffer: ArrayBuffer) => new DataView(buffer).getUint8(0),
         ),
         PSchema.primitive(
           "name",
-          (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
           { tagClass: TagClass.Private, tagNumber: 0x11 },
+          (buffer: ArrayBuffer) => new TextDecoder().decode(buffer),
         ),
       ],
-      { tagClass: TagClass.Private, tagNumber: 0x20 },
     );
 
     // Only include id child; omit required 'name'

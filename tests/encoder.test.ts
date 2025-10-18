@@ -13,8 +13,8 @@ describe("Encoder: SchemaBuilder.build() produces expected hex and handles failu
   it("primitive: build encodes to expected hex string", () => {
     const flagSchema = BSchema.primitive(
       "flag",
-      (ab: ArrayBuffer) => ab,
       { tagClass: TagClass.Private, tagNumber: 0x01 },
+      (ab: ArrayBuffer) => ab,
     );
     const builder = new SchemaBuilder(flagSchema);
     const input = new Uint8Array([0x01, 0x02]).buffer;
@@ -27,15 +27,11 @@ describe("Encoder: SchemaBuilder.build() produces expected hex and handles failu
   it("constructed: build encodes object to expected hex string", () => {
     const personSchema = BSchema.constructed(
       "person",
-      [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Private, tagNumber: 0x10,
-        }),
-        BSchema.primitive("name", (s: string) => new TextEncoder().encode(s).buffer, {
-          tagClass: TagClass.Private, tagNumber: 0x11,
-        }),
-      ],
       { tagClass: TagClass.Private, tagNumber: 0x20 },
+      [
+        BSchema.primitive("id", { tagClass: TagClass.Private, tagNumber: 0x10 }, (n: number) => new Uint8Array([n]).buffer),
+        BSchema.primitive("name", { tagClass: TagClass.Private, tagNumber: 0x11 }, (s: string) => new TextEncoder().encode(s).buffer),
+      ],
     );
     const builder = new SchemaBuilder(personSchema);
     const data = { id: 7, name: "alice" };
@@ -48,22 +44,18 @@ describe("Encoder: SchemaBuilder.build() produces expected hex and handles failu
   it("strict mode: missing required property throws", () => {
     const recSchema = BSchema.constructed(
       "rec",
-      [
-        BSchema.primitive("id", (n: number) => new Uint8Array([n]).buffer, {
-          tagClass: TagClass.Application, tagNumber: 0x11,
-        }),
-        BSchema.primitive("name", (s: string) => new TextEncoder().encode(s).buffer, {
-          tagClass: TagClass.Application, tagNumber: 0x12,
-        }),
-      ],
       { tagClass: TagClass.Application, tagNumber: 0x10 },
+      [
+        BSchema.primitive("id", { tagClass: TagClass.Application, tagNumber: 0x11 }, (n: number) => new Uint8Array([n]).buffer),
+        BSchema.primitive("name", { tagClass: TagClass.Application, tagNumber: 0x12 }, (s: string) => new TextEncoder().encode(s).buffer),
+      ],
     );
     const builder = new SchemaBuilder(recSchema, { strict: true });
     assert.throws(() => builder.build({ id: 1 } as any));
   });
 
   it("primitive without encode: wrong data type fails", () => {
-    const rawSchema = BSchema.primitive("raw", undefined, { tagNumber: 0x01 });
+    const rawSchema = BSchema.primitive("raw", { tagNumber: 0x01 }, undefined);
     const builder = new SchemaBuilder(rawSchema);
     assert.throws(() => builder.build(123 as any));
   });
