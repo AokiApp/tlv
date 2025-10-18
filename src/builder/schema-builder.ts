@@ -186,13 +186,9 @@ export class SchemaBuilder<S extends TLVSchema> {
         if (field.optional) {
           continue;
         }
-        if (this.strict) {
-          throw new Error(
-            `Missing required property '${fieldName}' in constructed '${schema.name}'`,
-          );
-        }
-        // non-strict: ignore unknown/missing
-        continue;
+        throw new Error(
+          `Missing required property '${fieldName}' in constructed '${schema.name}'`,
+        );
       }
 
       if (this.isRepeated(field)) {
