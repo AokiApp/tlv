@@ -5,16 +5,13 @@ type DefaultDecodeType = ArrayBuffer;
 type SchemaOptions = {
   readonly tagClass?: TagClass;
   readonly tagNumber?: number;
-  readonly optional?: true;
+  readonly optional?: boolean;
   readonly isSet?: boolean;
 };
 
-type OptionalFlag<O extends SchemaOptions | undefined> = O extends {
-  optional: true;
-}
-  ? { readonly optional: true }
-  : // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    {};
+type OptionalFlag<O extends SchemaOptions | undefined> = {
+  readonly optional: O extends { optional: true } ? true : false;
+};
 
 /**
  * Base interface for a TLV schema object.
@@ -26,7 +23,7 @@ interface TLVSchemaBase<N extends string = string> {
   /**
    * When present, this field is optional in a constructed container.
    */
-  readonly optional?: true;
+  readonly optional: boolean;
 }
 
 /**
@@ -41,7 +38,7 @@ interface PrimitiveTLVSchema<
    * Optional decode function for synchronous decoding.
    * Use a method signature to improve assignability across unions.
    */
-  decode?(buffer: ArrayBuffer): DecodedType;
+  decode(buffer: ArrayBuffer): DecodedType;
 }
 
 /**
@@ -156,10 +153,7 @@ export class SchemaParser<S extends TLVSchema> {
       }
     }
 
-    if (typeof schema.decode === "function") {
-      return schema.decode(tlv.value);
-    }
-    return tlv.value;
+    return schema.decode(tlv.value);
   }
 
   private parseConstructed(
@@ -546,36 +540,37 @@ export class Schema {
 
   static primitive<
     N extends string,
-    D = ArrayBuffer,
-    O extends SchemaOptions | undefined = undefined,
+    O extends SchemaOptions,
+    DecodedType = ArrayBuffer,
   >(
     name: N,
-    decode?: (buffer: ArrayBuffer) => D,
-    options?: O,
-  ): PrimitiveTLVSchema<N, D> & OptionalFlag<O> {
-    const tagNumber = options?.tagNumber;
+    options: O,
+    decode: (buffer: ArrayBuffer) => DecodedType = (buffer: ArrayBuffer) =>
+      buffer as DecodedType,
+  ): PrimitiveTLVSchema<N, DecodedType> & OptionalFlag<O> {
+    const tagNumber = options.tagNumber;
     if (typeof tagNumber !== "number") {
       throw new Error(`Primitive schema '${name}' requires tagNumber`);
     }
     const obj = {
       name,
-      ...(decode ? { decode } : {}),
+      decode,
       tagClass: options?.tagClass ?? TagClass.Universal,
       tagNumber,
-      optional: options?.optional ? (true as const) : undefined,
+      optional: options?.optional ? (true as const) : (false as const),
     };
-    return obj as PrimitiveTLVSchema<N, D> & OptionalFlag<O>;
+    return obj as PrimitiveTLVSchema<N, DecodedType> & OptionalFlag<O>;
   }
 
   static constructed<
     N extends string,
-    F extends readonly TLVSchema[],
-    O extends SchemaOptions | undefined = undefined,
+    O extends SchemaOptions,
+    Fields extends readonly TLVSchema[],
   >(
     name: N,
-    fields: F,
-    options?: O,
-  ): ConstructedTLVSchema<N, F> & OptionalFlag<O> {
+    options: O,
+    fields: Fields,
+  ): ConstructedTLVSchema<N, Fields> & OptionalFlag<O> {
     const tagClassNormalized = options?.tagClass ?? TagClass.Universal;
     const inferredIsSet =
       options?.isSet !== undefined
@@ -588,27 +583,27 @@ export class Schema {
       fields,
       tagClass: tagClassNormalized,
       tagNumber: options?.tagNumber ?? inferredTagNumber,
-      optional: options?.optional ? (true as const) : undefined,
+      optional: options?.optional ? (true as const) : (false as const),
       isSet: inferredIsSet,
     };
-    return obj as ConstructedTLVSchema<N, F> & OptionalFlag<O>;
+    return obj as ConstructedTLVSchema<N, Fields> & OptionalFlag<O>;
   }
 
   static repeated<
     N extends string,
+    O extends SchemaOptions,
     Item extends TLVSchema,
-    O extends SchemaOptions | undefined = undefined,
   >(
     name: N,
+    options: O,
     item: Item,
-    options?: O,
   ): RepeatedTLVSchema<N, Item> & OptionalFlag<O> {
     const obj = {
       name,
       item,
       tagClass: options?.tagClass ?? TagClass.Universal,
       tagNumber: options?.tagNumber,
-      optional: options?.optional ? (true as const) : undefined,
+      optional: options?.optional ? (true as const) : (false as const),
     };
     return obj as RepeatedTLVSchema<N, Item> & OptionalFlag<O>;
   }
