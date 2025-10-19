@@ -18,6 +18,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/coverage/**",
       "eslint.config.mjs",
       "vitest.config.js",
       "tests/*",
