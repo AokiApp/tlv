@@ -107,14 +107,20 @@ type ParsedResultFromPrimitive<S> =
 export class SchemaParser<S extends TLVSchema> {
   public readonly schema: S;
   public readonly strict: boolean;
+  private depthCounter: number = 0;
+  private readonly maxDepth: number;
 
-  public constructor(schema: S, options?: { strict?: boolean }) {
+  public constructor(schema: S, options?: { strict?: boolean; maxDepth?: number }) {
     this.schema = schema;
     this.strict = options?.strict ?? true;
+    this.maxDepth = options?.maxDepth ?? 100;
+    this.depthCounter = 0;
   }
 
   // Parses the TLV buffer and returns schema-typed data.
   public parse(buffer: ArrayBuffer): ParsedResult<S> {
+    // Reset depth counter per top-level parse invocation
+    this.depthCounter = 0;
     return this.parseTopLevel(this.schema, buffer) as ParsedResult<S>;
   }
 
@@ -138,65 +144,75 @@ export class SchemaParser<S extends TLVSchema> {
     schema: PrimitiveTLVSchema<string, unknown>,
     buffer: ArrayBuffer,
   ): unknown {
-    const tlv = BasicTLVParser.parse(buffer);
+    this.ensureDepth();
+    try {
+      const tlv = BasicTLVParser.parse(buffer);
 
-    if (
-      tlv.tag.tagClass !== schema.tagClass ||
-      tlv.tag.tagNumber !== schema.tagNumber ||
-      tlv.tag.constructed
-    ) {
-      throw new Error(
-        `TLV tag mismatch for primitive '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=false; found class=${tlv.tag.tagClass} number=${tlv.tag.tagNumber} constructed=${tlv.tag.constructed})`,
-      );
+      if (
+        tlv.tag.tagClass !== schema.tagClass ||
+        tlv.tag.tagNumber !== schema.tagNumber ||
+        tlv.tag.constructed
+      ) {
+        throw new Error(
+          `TLV tag mismatch for primitive '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=false; found class=${tlv.tag.tagClass} number=${tlv.tag.tagNumber} constructed=${tlv.tag.constructed})`,
+        );
+      }
+
+      // Enforce full buffer consumption at top-level when strict
+      if (this.strict && tlv.endOffset !== buffer.byteLength) {
+        throw new Error(
+          `Unexpected trailing bytes after TLV at offset ${tlv.endOffset} (buffer length ${buffer.byteLength}) for primitive '${schema.name}'`,
+        );
+      }
+
+      return schema.decode(tlv.value);
+    } finally {
+      this.depthCounter--;
     }
-
-    // Enforce full buffer consumption at top-level when strict
-    if (this.strict && tlv.endOffset !== buffer.byteLength) {
-      throw new Error(
-        `Unexpected trailing bytes after TLV at offset ${tlv.endOffset} (buffer length ${buffer.byteLength}) for primitive '${schema.name}'`,
-      );
-    }
-
-    return schema.decode(tlv.value);
   }
 
   private parseConstructed(
     schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
     buffer: ArrayBuffer,
   ): Record<string, unknown> {
-    const outer = BasicTLVParser.parse(buffer);
+    this.ensureDepth();
+    try {
+      const outer = BasicTLVParser.parse(buffer);
 
-    if (
-      outer.tag.tagClass !== schema.tagClass ||
-      outer.tag.tagNumber !== schema.tagNumber ||
-      !outer.tag.constructed
-    ) {
-      throw new Error(
-        `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
-      );
+      if (
+        outer.tag.tagClass !== schema.tagClass ||
+        outer.tag.tagNumber !== schema.tagNumber ||
+        !outer.tag.constructed
+      ) {
+        throw new Error(
+          `Container tag mismatch for constructed '${schema.name}' (expected class=${schema.tagClass} number=${schema.tagNumber} constructed=true; found class=${outer.tag.tagClass} number=${outer.tag.tagNumber} constructed=${outer.tag.constructed})`,
+        );
+      }
+
+      // Enforce full buffer consumption at top-level when strict
+      if (this.strict && outer.endOffset !== buffer.byteLength) {
+        throw new Error(
+          `Unexpected trailing bytes after TLV at offset ${outer.endOffset} (buffer length ${buffer.byteLength}) for constructed '${schema.name}'`,
+        );
+      }
+
+      const inner = outer.value;
+
+      // If this constructed schema declares no child fields, accept any inner content without validation.
+      // This preserves placeholder containers like header.sender/recipient and certTemplate.subject used in examples.
+      if (schema.fields.length === 0) {
+        return {};
+      }
+
+      // Determine SET vs SEQUENCE using explicit flag or tag inference (UNIVERSAL 17=SET, 16=SEQUENCE).
+      const treatAsSet = schema.isSet === true;
+      if (treatAsSet) {
+        return this.parseConstructedSet(schema, inner);
+      }
+      return this.parseConstructedSequence(schema, inner);
+    } finally {
+      this.depthCounter--;
     }
-
-    // Enforce full buffer consumption at top-level when strict
-    if (this.strict && outer.endOffset !== buffer.byteLength) {
-      throw new Error(
-        `Unexpected trailing bytes after TLV at offset ${outer.endOffset} (buffer length ${buffer.byteLength}) for constructed '${schema.name}'`,
-      );
-    }
-
-    const inner = outer.value;
-
-    // If this constructed schema declares no child fields, accept any inner content without validation.
-    // This preserves placeholder containers like header.sender/recipient and certTemplate.subject used in examples.
-    if (schema.fields.length === 0) {
-      return {};
-    }
-
-    // Determine SET vs SEQUENCE using explicit flag or tag inference (UNIVERSAL 17=SET, 16=SEQUENCE).
-    const treatAsSet = schema.isSet === true;
-    if (treatAsSet) {
-      return this.parseConstructedSet(schema, inner);
-    }
-    return this.parseConstructedSequence(schema, inner);
   }
 
   /**
@@ -508,6 +524,14 @@ export class SchemaParser<S extends TLVSchema> {
       if (ua[i] !== ub[i]) return ua[i] - ub[i];
     }
     return ua.length - ub.length;
+  }
+
+  // Depth guard to prevent stack overflows and pathological nested inputs
+  private ensureDepth(): void {
+    if (this.depthCounter >= this.maxDepth) {
+      throw new Error(`Maximum parsing depth exceeded: ${this.maxDepth}`);
+    }
+    this.depthCounter++;
   }
 
   private isConstructed(
