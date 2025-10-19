@@ -41,7 +41,7 @@ console.log(tlv);
 
 ```typescript
 import { SchemaParser, Schema, TagClass } from "@aokiapp/tlv/parser";
-import { decodeUtf8, decodeInteger } from "@aokiapp/tlv/utils/codecs";
+import { decodeUtf8, decodeInteger } from "@aokiapp/tlv/common";
 
 // Define a schema for a person record
 const PersonSchema = Schema.constructed("person", { tagNumber: 16 }, [
@@ -62,7 +62,7 @@ const result = parser.parse(tlvBuffer);
 
 ```typescript
 import { SchemaBuilder, Schema } from "@aokiapp/tlv/builder";
-import { encodeUtf8, encodeInteger } from "@aokiapp/tlv/utils/codecs";
+import { encodeUtf8, encodeInteger } from "@aokiapp/tlv/common";
 
 // Define builder schema
 const PersonSchema = Schema.constructed("person", { tagNumber: 16 }, [
