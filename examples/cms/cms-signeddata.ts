@@ -1,4 +1,4 @@
- // Minimal CMS (RFC 5652) SignedData example using @aokiapp/tlv
+// Minimal CMS (RFC 5652) SignedData example using @aokiapp/tlv
 // Demonstrates: schema definition (SEQUENCE/SET/context-specific EXPLICIT/IMPLICIT),
 // encoding (SchemaBuilder.build()), and decoding (SchemaParser.parse()).
 //
@@ -34,11 +34,7 @@ import {
   encodeInteger,
   decodeInteger,
   toArrayBuffer,
-} from "../../src/utils/codecs";
-
-// OID helpers (DER)
-
-// INTEGER (positive) helpers (DER minimal length)
+} from "../../src/common/codecs";
 
 // Common CMS and Algorithm OIDs
 const CMS_OIDS = {
@@ -51,155 +47,220 @@ const ALGO_OIDS = {
   rsaEncryption: "1.2.840.113549.1.1.1",
 };
 
-// -------------------- Builder Schemas --------------------
+function builderSchemas() {
+  // AlgorithmIdentifier ::= SEQUENCE { algorithm OBJECT IDENTIFIER, parameters ANY (NULL here) }
+  const AlgorithmIdentifier = BuilderSchema.constructed("alg", {}, [
+    BuilderSchema.primitive("algorithm", { tagNumber: 6 }, (s: string) =>
+      encodeOID(s),
+    ),
+    BuilderSchema.primitive(
+      "paramsNull",
+      { tagNumber: 5 },
+      (_: null) => new ArrayBuffer(0),
+    ),
+  ]);
 
-const AlgorithmIdentifier_B = BuilderSchema.constructed(
-  "alg",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    BuilderSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, (s: string) => encodeOID(s)),
-    // Include NULL parameters explicitly (commonly used for rsaEncryption)
-    BuilderSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: null) => new ArrayBuffer(0)),
-  ],
-);
+  // DigestAlgorithmIdentifiers ::= SET OF DigestAlgorithmIdentifier
+  const DigestAlgorithmIdentifiers = BuilderSchema.constructed(
+    "digestAlgorithms",
+    { isSet: true },
+    [BuilderSchema.repeated("item", {}, AlgorithmIdentifier)],
+  );
 
-const EncapsulatedContentInfo_B = BuilderSchema.constructed(
-  "encapContentInfo",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    BuilderSchema.primitive("eContentType", { tagClass: TagClass.Universal, tagNumber: 6 }, (s: string) => encodeOID(s)),
-    // eContent [0] EXPLICIT OCTET STRING OPTIONAL (we include it here)
-    BuilderSchema.constructed(
-      "eContentWrap",
+  // EncapsulatedContentInfo ::= SEQUENCE { eContentType ContentType, eContent [0] EXPLICIT OCTET STRING OPTIONAL }
+  const EncapsulatedContentInfo = BuilderSchema.constructed(
+    "encapContentInfo",
+    {},
+    [
+      BuilderSchema.primitive("eContentType", { tagNumber: 6 }, (s: string) =>
+        encodeOID(s),
+      ),
+      BuilderSchema.constructed(
+        "eContentWrap",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
+        [
+          BuilderSchema.primitive(
+            "eContent",
+            { tagNumber: 4 },
+            (buf: ArrayBuffer) => buf,
+          ),
+        ],
+      ),
+    ],
+  );
+
+  // SignerInfo with sid = subjectKeyIdentifier [0] IMPLICIT OCTET STRING
+  const SignerInfo = BuilderSchema.constructed("signer", {}, [
+    BuilderSchema.primitive("version", { tagNumber: 2 }, (n: number) =>
+      encodeInteger(n),
+    ),
+    BuilderSchema.primitive(
+      "sid",
       { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
-      [
-        BuilderSchema.primitive("eContent", { tagClass: TagClass.Universal, tagNumber: 4 }, (buf: ArrayBuffer) => buf),
-      ],
+      (id: Uint8Array) => toArrayBuffer(id),
     ),
-  ],
-);
+    BuilderSchema.constructed("digestAlgorithm", {}, [
+      BuilderSchema.primitive("algorithm", { tagNumber: 6 }, (s: string) =>
+        encodeOID(s),
+      ),
+      BuilderSchema.primitive(
+        "paramsNull",
+        { tagNumber: 5 },
+        (_: null) => new ArrayBuffer(0),
+      ),
+    ]),
+    BuilderSchema.constructed("signatureAlgorithm", {}, [
+      BuilderSchema.primitive("algorithm", { tagNumber: 6 }, (s: string) =>
+        encodeOID(s),
+      ),
+      BuilderSchema.primitive(
+        "paramsNull",
+        { tagNumber: 5 },
+        (_: null) => new ArrayBuffer(0),
+      ),
+    ]),
+    BuilderSchema.primitive("signature", { tagNumber: 4 }, (sig: Uint8Array) =>
+      toArrayBuffer(sig),
+    ),
+  ]);
 
-const SignerInfo_B = BuilderSchema.constructed(
-  "signer",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    BuilderSchema.primitive("version", { tagClass: TagClass.Universal, tagNumber: 2 }, (n: number) => encodeInteger(n)),
-    // sid: subjectKeyIdentifier [0] IMPLICIT OCTET STRING
-    BuilderSchema.primitive("sid", { tagClass: TagClass.ContextSpecific, tagNumber: 0 }, (id: Uint8Array) => toArrayBuffer(id)),
+  // SignerInfos ::= SET OF SignerInfo
+  const SignerInfos = BuilderSchema.constructed(
+    "signerInfos",
+    { isSet: true },
+    [BuilderSchema.repeated("item", {}, SignerInfo)],
+  );
+
+  // SignedData ::= SEQUENCE { version, digestAlgorithms, encapContentInfo, signerInfos }
+  const SignedData = BuilderSchema.constructed("signedData", {}, [
+    BuilderSchema.primitive("version", { tagNumber: 2 }, (n: number) =>
+      encodeInteger(n),
+    ),
+    DigestAlgorithmIdentifiers,
+    EncapsulatedContentInfo,
+    // certificates [0] IMPLICIT CertificateSet OPTIONAL (omitted)
+    // crls [1] IMPLICIT RevocationInfoChoices OPTIONAL (omitted)
+    SignerInfos,
+  ]);
+
+  // ContentInfo ::= SEQUENCE { contentType OBJECT IDENTIFIER, content [0] EXPLICIT SignedData }
+  const ContentInfo_SignedData = BuilderSchema.constructed("contentInfo", {}, [
+    BuilderSchema.primitive("contentType", { tagNumber: 6 }, (s: string) =>
+      encodeOID(s),
+    ),
     BuilderSchema.constructed(
-      "digestAlgorithm",
-      { tagClass: TagClass.Universal, tagNumber: 16 },
-      [
-        BuilderSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, (s: string) => encodeOID(s)),
-        BuilderSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: null) => new ArrayBuffer(0)),
-      ],
-    ),
-    BuilderSchema.constructed(
-      "signatureAlgorithm",
-      { tagClass: TagClass.Universal, tagNumber: 16 },
-      [
-        BuilderSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, (s: string) => encodeOID(s)),
-        BuilderSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: null) => new ArrayBuffer(0)),
-      ],
-    ),
-    BuilderSchema.primitive("signature", { tagClass: TagClass.Universal, tagNumber: 4 }, (sig: Uint8Array) => toArrayBuffer(sig)),
-  ],
-);
-
-const SignedData_B = BuilderSchema.constructed(
-  "signedData",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    BuilderSchema.primitive("version", { tagClass: TagClass.Universal, tagNumber: 2 }, (n: number) => encodeInteger(n)),
-    // digestAlgorithms SEQUENCE OF AlgorithmIdentifier (demo-friendly; library also supports SET OF)
-    BuilderSchema.repeated("digestAlgorithms", { tagClass: TagClass.Universal, tagNumber: 17 }, AlgorithmIdentifier_B),
-    EncapsulatedContentInfo_B,
-    // signerInfos SEQUENCE OF SignerInfo (demo-friendly; library also supports SET OF)
-    BuilderSchema.repeated("signerInfos", { tagClass: TagClass.Universal, tagNumber: 17 }, SignerInfo_B),
-  ],
-);
-
-// ContentInfo with content [0] EXPLICIT SignedData
-const ContentInfo_SignedData_B = BuilderSchema.constructed(
-  "contentInfo",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    BuilderSchema.primitive("contentType", { tagClass: TagClass.Universal, tagNumber: 6 }, (s: string) => encodeOID(s)),
-    BuilderSchema.constructed("content", { tagClass: TagClass.ContextSpecific, tagNumber: 0 }, [SignedData_B]),
-  ],
-);
-
-// -------------------- Parser Schemas --------------------
-
-const AlgorithmIdentifier_P = ParserSchema.constructed(
-  "alg",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    ParserSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, decodeOID),
-    ParserSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: ArrayBuffer) => null),
-  ],
-);
-
-const EncapsulatedContentInfo_P = ParserSchema.constructed(
-  "encapContentInfo",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    ParserSchema.primitive("eContentType", { tagClass: TagClass.Universal, tagNumber: 6 }, decodeOID),
-    ParserSchema.constructed(
-      "eContentWrap",
+      "content",
       { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
-      [
-        ParserSchema.primitive("eContent", { tagClass: TagClass.Universal, tagNumber: 4 }, (buf: ArrayBuffer) => new Uint8Array(buf)),
-      ],
+      [SignedData],
     ),
-  ],
-);
+  ]);
 
-const SignerInfo_P = ParserSchema.constructed(
-  "signer",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    ParserSchema.primitive("version", { tagClass: TagClass.Universal, tagNumber: 2 }, decodeInteger),
-    ParserSchema.primitive("sid", { tagClass: TagClass.ContextSpecific, tagNumber: 0 }, (buf: ArrayBuffer) => new Uint8Array(buf)),
+  return {
+    AlgorithmIdentifier,
+    DigestAlgorithmIdentifiers,
+    EncapsulatedContentInfo,
+    SignerInfo,
+    SignerInfos,
+    SignedData,
+    ContentInfo_SignedData,
+  };
+}
+
+function parserSchemas() {
+  const AlgorithmIdentifier = ParserSchema.constructed("alg", {}, [
+    ParserSchema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
+    ParserSchema.primitive(
+      "paramsNull",
+      { tagNumber: 5 },
+      (_: ArrayBuffer) => null,
+    ),
+  ]);
+
+  const DigestAlgorithmIdentifiers = ParserSchema.constructed(
+    "digestAlgorithms",
+    { isSet: true },
+    [ParserSchema.repeated("item", {}, AlgorithmIdentifier)],
+  );
+
+  const EncapsulatedContentInfo = ParserSchema.constructed(
+    "encapContentInfo",
+    {},
+    [
+      ParserSchema.primitive("eContentType", { tagNumber: 6 }, decodeOID),
+      ParserSchema.constructed(
+        "eContentWrap",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
+        [
+          ParserSchema.primitive(
+            "eContent",
+            { tagNumber: 4 },
+            (buf: ArrayBuffer) => new Uint8Array(buf),
+          ),
+        ],
+      ),
+    ],
+  );
+
+  const SignerInfo = ParserSchema.constructed("signer", {}, [
+    ParserSchema.primitive("version", { tagNumber: 2 }, decodeInteger),
+    ParserSchema.primitive(
+      "sid",
+      { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
+      (buf: ArrayBuffer) => new Uint8Array(buf),
+    ),
+    ParserSchema.constructed("digestAlgorithm", {}, [
+      ParserSchema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
+      ParserSchema.primitive(
+        "paramsNull",
+        { tagNumber: 5 },
+        (_: ArrayBuffer) => null,
+      ),
+    ]),
+    ParserSchema.constructed("signatureAlgorithm", {}, [
+      ParserSchema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
+      ParserSchema.primitive(
+        "paramsNull",
+        { tagNumber: 5 },
+        (_: ArrayBuffer) => null,
+      ),
+    ]),
+    ParserSchema.primitive(
+      "signature",
+      { tagNumber: 4 },
+      (buf: ArrayBuffer) => new Uint8Array(buf),
+    ),
+  ]);
+
+  const SignerInfos = ParserSchema.constructed("signerInfos", { isSet: true }, [
+    ParserSchema.repeated("item", {}, SignerInfo),
+  ]);
+
+  const SignedData = ParserSchema.constructed("signedData", {}, [
+    ParserSchema.primitive("version", { tagNumber: 2 }, decodeInteger),
+    DigestAlgorithmIdentifiers,
+    EncapsulatedContentInfo,
+    SignerInfos,
+  ]);
+
+  const ContentInfo_SignedData = ParserSchema.constructed("contentInfo", {}, [
+    ParserSchema.primitive("contentType", { tagNumber: 6 }, decodeOID),
     ParserSchema.constructed(
-      "digestAlgorithm",
-      { tagClass: TagClass.Universal, tagNumber: 16 },
-      [
-        ParserSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, decodeOID),
-        ParserSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: ArrayBuffer) => null),
-      ],
+      "content",
+      { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
+      [SignedData],
     ),
-    ParserSchema.constructed(
-      "signatureAlgorithm",
-      { tagClass: TagClass.Universal, tagNumber: 16 },
-      [
-        ParserSchema.primitive("algorithm", { tagClass: TagClass.Universal, tagNumber: 6 }, decodeOID),
-        ParserSchema.primitive("paramsNull", { tagClass: TagClass.Universal, tagNumber: 5 }, (_: ArrayBuffer) => null),
-      ],
-    ),
-    ParserSchema.primitive("signature", { tagClass: TagClass.Universal, tagNumber: 4 }, (buf: ArrayBuffer) => new Uint8Array(buf)),
-  ],
-);
+  ]);
 
-const SignedData_P = ParserSchema.constructed(
-  "signedData",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    ParserSchema.primitive("version", { tagClass: TagClass.Universal, tagNumber: 2 }, decodeInteger),
-    ParserSchema.repeated("digestAlgorithms", { tagClass: TagClass.Universal, tagNumber: 17 }, AlgorithmIdentifier_P),
-    EncapsulatedContentInfo_P,
-    ParserSchema.repeated("signerInfos", { tagClass: TagClass.Universal, tagNumber: 17 }, SignerInfo_P),
-  ],
-);
-
-const ContentInfo_SignedData_P = ParserSchema.constructed(
-  "contentInfo",
-  { tagClass: TagClass.Universal, tagNumber: 16 },
-  [
-    ParserSchema.primitive("contentType", { tagClass: TagClass.Universal, tagNumber: 6 }, decodeOID),
-    ParserSchema.constructed("content", { tagClass: TagClass.ContextSpecific, tagNumber: 0 }, [SignedData_P]),
-  ],
-);
+  return {
+    AlgorithmIdentifier,
+    DigestAlgorithmIdentifiers,
+    EncapsulatedContentInfo,
+    SignerInfo,
+    SignerInfos,
+    SignedData,
+    ContentInfo_SignedData,
+  };
+}
 
 // -------------------- Demo build and parse --------------------
 
@@ -216,56 +277,47 @@ export function buildContentInfoSignedDataDemo(): ArrayBuffer {
     {
       version: 3,
       sid,
-      digestAlgorithm: { algorithm: ALGO_OIDS.sha256, paramsNull: null as null },
-      signatureAlgorithm: { algorithm: ALGO_OIDS.rsaEncryption, paramsNull: null as null },
+      digestAlgorithm: {
+        algorithm: ALGO_OIDS.sha256,
+        paramsNull: null as null,
+      },
+      signatureAlgorithm: {
+        algorithm: ALGO_OIDS.rsaEncryption,
+        paramsNull: null as null,
+      },
       signature: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
     },
     {
       version: 3,
       sid: new Uint8Array(20).fill(0xcd),
-      digestAlgorithm: { algorithm: ALGO_OIDS.sha256, paramsNull: null as null },
-      signatureAlgorithm: { algorithm: ALGO_OIDS.rsaEncryption, paramsNull: null as null },
+      digestAlgorithm: {
+        algorithm: ALGO_OIDS.sha256,
+        paramsNull: null as null,
+      },
+      signatureAlgorithm: {
+        algorithm: ALGO_OIDS.rsaEncryption,
+        paramsNull: null as null,
+      },
       signature: new Uint8Array([0xca, 0xfe, 0xba, 0xbe]),
     },
   ];
 
-  // Canonical DER sorting for SET OF containers (RFC 5652 / DER)
-  const algoBuilder = new SchemaBuilder(AlgorithmIdentifier_B);
-  const signerInfoBuilder = new SchemaBuilder(SignerInfo_B);
-
-  const compareDER = (a: Uint8Array, b: Uint8Array) => {
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i++) {
-      if (a[i] !== b[i]) return a[i] - b[i];
-    }
-    return a.length - b.length;
-  };
-
-  const digestAlgorithmsSorted = digestAlgorithmsData
-    .map((d) => ({ d, der: new Uint8Array(algoBuilder.build(d)) }))
-    .sort((x, y) => compareDER(x.der, y.der))
-    .map((x) => x.d);
-
-  const signerInfosSorted = signerInfosData
-    .map((s) => ({ s, der: new Uint8Array(signerInfoBuilder.build(s)) }))
-    .sort((x, y) => compareDER(x.der, y.der))
-    .map((x) => x.s);
-
-  const builder = new SchemaBuilder(ContentInfo_SignedData_B);
+  const B = builderSchemas();
+  const builder = new SchemaBuilder(B.ContentInfo_SignedData);
   const encoded = builder.build({
     contentType: CMS_OIDS.id_signedData,
     content: {
       signedData: {
         // MUST be 3 because we use subjectKeyIdentifier in SignerInfo (RFC 5652 Section 5.1)
         version: 3,
-        digestAlgorithms: digestAlgorithmsSorted,
+        digestAlgorithms: { item: digestAlgorithmsData },
         encapContentInfo: {
           eContentType: CMS_OIDS.id_data,
           eContentWrap: {
             eContent: toArrayBuffer(contentBytes),
           },
         },
-        signerInfos: signerInfosSorted,
+        signerInfos: { item: signerInfosData },
       },
     },
   });
@@ -273,24 +325,27 @@ export function buildContentInfoSignedDataDemo(): ArrayBuffer {
 }
 
 export function parseContentInfoSignedDataDemo(buffer: ArrayBuffer) {
-  const parser = new SchemaParser(ContentInfo_SignedData_P);
+  const P = parserSchemas();
+  const parser = new SchemaParser(P.ContentInfo_SignedData);
   const parsed = parser.parse(buffer) as {
     contentType: string;
     content: {
       signedData: {
         version: number;
-        digestAlgorithms: { algorithm: string; paramsNull: null }[];
+        digestAlgorithms: { item: { algorithm: string; paramsNull: null }[] };
         encapContentInfo: {
           eContentType: string;
           eContentWrap: { eContent: Uint8Array };
         };
         signerInfos: {
-          version: number;
-          sid: Uint8Array;
-          digestAlgorithm: { algorithm: string; paramsNull: null };
-          signatureAlgorithm: { algorithm: string; paramsNull: null };
-          signature: Uint8Array;
-        }[];
+          item: {
+            version: number;
+            sid: Uint8Array;
+            digestAlgorithm: { algorithm: string; paramsNull: null };
+            signatureAlgorithm: { algorithm: string; paramsNull: null };
+            signature: Uint8Array;
+          }[];
+        };
       };
     };
   };
@@ -300,8 +355,8 @@ export function parseContentInfoSignedDataDemo(buffer: ArrayBuffer) {
   const sd = parsed.content.signedData;
   const eContentType = sd.encapContentInfo.eContentType;
   const eContent = sd.encapContentInfo.eContentWrap.eContent;
-  const signers = sd.signerInfos;
-  const algOids = sd.digestAlgorithms.map((a) => a.algorithm);
+  const signers = sd.signerInfos.item;
+  const algOids = sd.digestAlgorithms.item.map((a) => a.algorithm);
 
   return {
     contentTypeOID: ct,
