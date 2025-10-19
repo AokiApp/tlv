@@ -1,4 +1,4 @@
-import { TagClass } from "../common/types.js";
+import { inferIsSetFromTag, TagClass } from "../common/index";
 import { BasicTLVBuilder } from "./basic-builder.js";
 
 type DefaultEncodeType = ArrayBuffer;
@@ -250,25 +250,6 @@ export class SchemaBuilder<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors used by the builder.
 export class Schema {
-  /**
-   * Infer whether a constructed UNIVERSAL tag indicates SET or SEQUENCE.
-   * - Returns true for UNIVERSAL tagNumber 17 (SET)
-   * - Returns false for UNIVERSAL tagNumber 16 (SEQUENCE)
-   * - Returns undefined for other classes/numbers
-   */
-  static inferIsSetFromTag(
-    tagClass?: TagClass,
-    tagNumber?: number,
-  ): boolean | undefined {
-    const cls = tagClass ?? TagClass.Universal;
-    if (typeof tagNumber !== "number") return undefined;
-    if (cls === TagClass.Universal) {
-      if (tagNumber === 17) return true;
-      if (tagNumber === 16) return false;
-    }
-    return undefined;
-  }
-
   static primitive<
     N extends string,
     O extends SchemaOptions,
@@ -306,7 +287,7 @@ export class Schema {
     const inferredIsSet =
       options?.isSet !== undefined
         ? options.isSet
-        : Schema.inferIsSetFromTag(tagClassNormalized, options?.tagNumber);
+        : inferIsSetFromTag(tagClassNormalized, options?.tagNumber);
     const inferredTagNumber = inferredIsSet ? 17 : 16;
 
     const obj = {
