@@ -1,7 +1,7 @@
- // tests/type-parse.spec.ts
+// tests/types/parse.types.test.ts
 import { describe, it } from "vitest";
-import { Schema as PSchema, SchemaParser } from "../src/parser";
-import { AssertTypeCompatible, assertTypeTrue } from "./utils";
+import { Schema as PSchema, SchemaParser } from "../../src/parser";
+import { AssertTypeCompatible, assertTypeTrue } from "../helpers/utils";
 
 describe("parse-only type test (single large constructed schema)", () => {
   it("compile-time: ParsedResult matches Expected; runtime: parse with errors swallowed", () => {
@@ -25,6 +25,7 @@ describe("parse-only type test (single large constructed schema)", () => {
         ),
       ],
     );
+
     type Expected = {
       integer: number;
       utf8string: string;

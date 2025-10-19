@@ -1,7 +1,7 @@
- // tests/type-build.spec.ts
+// tests/types/build.types.test.ts
 import { describe, it } from "vitest";
-import { Schema as BSchema, SchemaBuilder } from "../src/builder";
-import { AssertTypeCompatible, assertTypeTrue } from "./utils";
+import { Schema as BSchema, SchemaBuilder } from "../../src/builder";
+import { AssertTypeCompatible, assertTypeTrue } from "../helpers/utils";
 
 describe("build-only type test (single large constructed schema)", () => {
   it("compile-time: BuildData matches Expected; runtime: build with errors swallowed", () => {
