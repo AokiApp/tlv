@@ -476,7 +476,6 @@ npm run typecheck      # Type checking only
 
 ```bash
 npm test              # Run tests
-npm run test:coverage # Run tests with coverage
 ```
 
 ### Code Quality
