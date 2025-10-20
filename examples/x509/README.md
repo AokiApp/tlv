@@ -8,12 +8,13 @@ This directory contains examples of X.509 certificate processing using the @aoki
 
 ### 1. decode-certificate.ts
 
-X.509 証明書をデコード（解析）する例です。
+X.509 証明書をデコード（解析）する例です。https://aoki.app の実際の証明書を使用します。
 
-Demonstrates how to decode (parse) an X.509 certificate.
+Demonstrates how to decode (parse) an X.509 certificate using the actual certificate from https://aoki.app.
 
 **機能 / Features:**
 - DER 形式の証明書ファイルの読み込み / Read DER-formatted certificate files
+- https://aoki.app の実際の証明書を使用 / Uses the actual certificate from https://aoki.app
 - 証明書の構造を解析 / Parse certificate structure
 - バージョン、シリアル番号、発行者、サブジェクト、有効期限などを抽出 / Extract version, serial number, issuer, subject, validity period, etc.
 - 拡張フィールド（Basic Constraints、Subject Alternative Name など）の解析 / Parse extension fields (Basic Constraints, Subject Alternative Name, etc.)
@@ -27,21 +28,23 @@ npx tsx examples/x509/decode-certificate.ts
 ```
 === X.509 Certificate Decoding Example ===
 
-Certificate file: .../sample-cert.der
-Certificate size: 950 bytes
+This example decodes the actual certificate from https://aoki.app
+
+Certificate file: .../aoki-app-cert.der
+Certificate size: 917 bytes
 
 === Certificate Information ===
 
 Version: v3 (2)
-Serial Number: 64383DB0057A8C365C7480540966DC16DD3FDC9C
-Signature Algorithm: 1.2.840.113549.1.1.11
-Issuer: C=JP, ST=Tokyo, L=Tokyo, O=AokiApp Inc., CN=aoki.app
+Serial Number: 00E4166FC8D5DA18E50D1B282941769683
+Signature Algorithm: 1.2.840.10045.4.3.2
+Issuer: C=US, O=Google Trust Services, CN=WE1
 
 Validity:
-  Not Before: 251020072853Z
-  Not After:  261020072853Z
+  Not Before: 250825235627Z
+  Not After:  251124005624Z
 
-Subject: C=JP, ST=Tokyo, L=Tokyo, O=AokiApp Inc., CN=aoki.app
+Subject: CN=aoki.app
 ...
 ```
 
@@ -84,11 +87,12 @@ Step 3: Verifying certificates...
 
 ### 3. verify-certificate.ts
 
-証明書チェーンの検証、CN/SAN の検証など、正統な TLS 検証を行う例です。
+証明書チェーンの検証、CN/SAN の検証など、正統な TLS 検証を行う例です。https://aoki.app の実際の証明書を使用します。
 
-Demonstrates proper TLS certificate chain verification, including CN/SAN validation.
+Demonstrates proper TLS certificate chain verification, including CN/SAN validation, using the actual certificate from https://aoki.app.
 
 **機能 / Features:**
+- https://aoki.app の実際の証明書チェーンを使用 / Uses the actual certificate chain from https://aoki.app
 - 証明書チェーンの解析と検証 / Parse and verify certificate chain
 - 有効期限の確認 / Check validity period
 - ホスト名の検証（CN および SAN） / Verify hostname (CN and SAN)
@@ -98,33 +102,34 @@ Demonstrates proper TLS certificate chain verification, including CN/SAN validat
 
 **実行方法 / How to run:**
 ```bash
-# 先に issue-certificate.ts を実行して証明書チェーンを作成してください
-# First run issue-certificate.ts to create the certificate chain
-npx tsx examples/x509/issue-certificate.ts
-
-# 次に検証を実行
-# Then run verification
+# 証明書チェーンが含まれているため、そのまま実行できます
+# The certificate chain is included, so you can run it directly
 npx tsx examples/x509/verify-certificate.ts
+
+# オプション: issue-certificate.ts を実行して追加の証明書例を作成
+# Optional: Run issue-certificate.ts to create additional certificate examples
+npx tsx examples/x509/issue-certificate.ts
 ```
 
 **出力例 / Sample output:**
 ```
 === X.509 Certificate Chain Verification Example ===
 
-Test 1: Verify sample certificate
+Test 1: Verify aoki.app certificate
 
-Certificate: C=JP, ST=Tokyo, L=Tokyo, O=AokiApp Inc., CN=aoki.app
-Serial: 64383db0057a8c365c7480540966dc16dd3fdc9c
-Validity: 2025-10-20T07:28:53.000Z - 2026-10-20T07:28:53.000Z
+Certificate: CN=aoki.app
+Serial: 00e4166fc8d5da18e50d1b282941769683
+Issuer: C=US, O=Google Trust Services, CN=WE1
+Validity: 2025-08-25T23:56:27.000Z - 2025-11-24T00:56:24.000Z
 
 Validity Check:
-  Current time: 2025-10-20T07:39:27.892Z
+  Current time: 2025-10-20T08:23:36.774Z
   Valid period: ✓ VALID
 
 Hostname Verification:
   aoki.app: ✓ MATCHES
-  www.aoki.app: ✓ MATCHES
-  other.aoki.app: ✗ DOES NOT MATCH
+  www.aoki.app: ✗ DOES NOT MATCH
+  api.aoki.app: ✗ DOES NOT MATCH
 ...
 ```
 
@@ -182,7 +187,9 @@ openssl version
 - `decode-certificate.ts`: 証明書デコード例 / Certificate decoding example
 - `issue-certificate.ts`: 証明書発行例 / Certificate issuance example
 - `verify-certificate.ts`: 証明書検証例 / Certificate verification example
-- `sample-cert.der`: サンプル証明書（DER 形式） / Sample certificate (DER format)
+- `aoki-app-cert.der`: https://aoki.app の実際の証明書（DER 形式） / Actual certificate from https://aoki.app (DER format)
+- `aoki-app-ca-cert.der`: https://aoki.app の CA 証明書（DER 形式） / CA certificate for https://aoki.app (DER format)
+- `sample-cert.der`: 以前のサンプル証明書（DER 形式）/ Legacy sample certificate (DER format)
 - `README.md`: このファイル / This file
 
 ## 注意事項 / Notes

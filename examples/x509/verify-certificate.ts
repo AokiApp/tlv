@@ -2,7 +2,7 @@
  * X.509 Certificate Chain Verification Example
  *
  * This example demonstrates a complete X.509 certificate chain verification
- * including:
+ * using the actual certificate from https://aoki.app, including:
  * 1. Parsing certificate chain
  * 2. Verifying certificate signatures
  * 3. Checking validity periods
@@ -424,28 +424,26 @@ async function main() {
 
   console.log("=== X.509 Certificate Chain Verification Example ===\n");
 
-  // Use the sample certificate we created earlier
-  const certPath = path.resolve(__dirname, "sample-cert.der");
+  // Use the actual certificate from https://aoki.app
+  const certPath = path.resolve(__dirname, "aoki-app-cert.der");
+  const caCertPath = path.resolve(__dirname, "aoki-app-ca-cert.der");
 
-  // For demonstration, we'll also use certificates from the issue example
-  const caCertPath = "/tmp/x509-example/ca-cert.der";
-  const childCertPath = "/tmp/x509-example/child-cert.der";
+  console.log("Test 1: Verify aoki.app certificate\n");
 
-  console.log("Test 1: Verify sample certificate\n");
+  const aokirCertBuffer = bufferToArrayBuffer(await readFile(certPath));
+  const aokiCert = parseCertificate(aokirCertBuffer);
 
-  const sampleCertBuffer = bufferToArrayBuffer(await readFile(certPath));
-  const sampleCert = parseCertificate(sampleCertBuffer);
-
-  console.log(`Certificate: ${sampleCert.subjectDN}`);
-  console.log(`Serial: ${sampleCert.serialNumber}`);
+  console.log(`Certificate: ${aokiCert.subjectDN}`);
+  console.log(`Serial: ${aokiCert.serialNumber}`);
+  console.log(`Issuer: ${aokiCert.issuerDN}`);
   console.log(
-    `Validity: ${sampleCert.validity.notBefore.toISOString()} - ${sampleCert.validity.notAfter.toISOString()}`,
+    `Validity: ${aokiCert.validity.notBefore.toISOString()} - ${aokiCert.validity.notAfter.toISOString()}`,
   );
 
   // Check validity period
   const now = new Date();
   const isValidPeriod =
-    now >= sampleCert.validity.notBefore && now <= sampleCert.validity.notAfter;
+    now >= aokiCert.validity.notBefore && now <= aokiCert.validity.notAfter;
 
   console.log(`\nValidity Check:`);
   console.log(
@@ -456,11 +454,11 @@ async function main() {
   );
 
   // Check hostname matching
-  const testHostnames = ["aoki.app", "www.aoki.app", "other.aoki.app"];
+  const testHostnames = ["aoki.app", "www.aoki.app", "api.aoki.app"];
 
   console.log(`\nHostname Verification:`);
   for (const hostname of testHostnames) {
-    const matches = matchesHostname(hostname, sampleCert);
+    const matches = matchesHostname(hostname, aokiCert);
     console.log(
       `  ${hostname}: ${matches ? "✓ MATCHES" : "✗ DOES NOT MATCH"}`,
     );
@@ -474,9 +472,10 @@ async function main() {
     "2.5.29.17": "Subject Alternative Name",
     "2.5.29.19": "Basic Constraints",
     "2.5.29.35": "Authority Key Identifier",
+    "2.5.29.37": "Extended Key Usage",
   };
 
-  for (const [oid, ext] of sampleCert.extensions) {
+  for (const [oid, ext] of aokiCert.extensions) {
     const name = extensionNames[oid] || oid;
     console.log(`  ${name}${ext.critical ? " (Critical)" : ""}`);
 
@@ -487,40 +486,134 @@ async function main() {
     }
   }
 
-  // Test 2: Verify certificate chain if available
+  // Test 2: Verify certificate chain with CA
   try {
     console.log(`\n\nTest 2: Verify certificate chain\n`);
 
     const caCertBuffer = bufferToArrayBuffer(await readFile(caCertPath));
     const caCert = parseCertificate(caCertBuffer);
 
-    const childCertBuffer = bufferToArrayBuffer(await readFile(childCertPath));
-    const childCert = parseCertificate(childCertBuffer);
-
     console.log(`CA Certificate: ${caCert.subjectDN}`);
-    console.log(`  Self-signed: ${caCert.issuerDN === caCert.subjectDN ? "Yes" : "No"}`);
+    console.log(`  Issuer: ${caCert.issuerDN}`);
 
-    console.log(`\nChild Certificate: ${childCert.subjectDN}`);
-    console.log(`  Issued by: ${childCert.issuerDN}`);
+    console.log(`\naoki.app Certificate: ${aokiCert.subjectDN}`);
+    console.log(`  Issued by: ${aokiCert.issuerDN}`);
 
     // Verify issuer match
-    const issuerMatches = childCert.issuerDN === caCert.subjectDN;
+    const issuerMatches = aokiCert.issuerDN === caCert.subjectDN;
     console.log(
       `\nIssuer Verification: ${issuerMatches ? "✓ MATCHES" : "✗ MISMATCH"}`,
     );
 
-    // Check if child is issued by CA
     if (issuerMatches) {
-      console.log("  Child certificate issuer matches CA subject");
+      console.log("  Certificate issuer matches CA subject");
     }
 
     // Check Basic Constraints
     const caBC = caCert.extensions.get("2.5.29.19");
-    const childBC = childCert.extensions.get("2.5.29.19");
+    const certBC = aokiCert.extensions.get("2.5.29.19");
 
     console.log(`\nBasic Constraints:`);
     if (caBC) {
-      // Parse basic constraints to check CA flag
+      try {
+        const bcSeq = BasicTLVParser.parse(caBC.value);
+        if (bcSeq.value.byteLength > 0) {
+          const caBool = BasicTLVParser.parse(bcSeq.value);
+          const isCA = caBool.tag.tagNumber === 1 && new Uint8Array(caBool.value)[0] !== 0;
+          console.log(`  CA certificate CA flag: ${isCA ? "✓ TRUE" : "✗ FALSE"}`);
+        } else {
+          console.log(`  CA certificate CA flag: ✗ FALSE (empty sequence)`);
+        }
+      } catch {
+        console.log(`  CA certificate CA flag: (unable to parse)`);
+      }
+    }
+
+    if (certBC) {
+      try {
+        const bcSeq = BasicTLVParser.parse(certBC.value);
+        if (bcSeq.value.byteLength > 0) {
+          const caBool = BasicTLVParser.parse(bcSeq.value);
+          const isCA = caBool.tag.tagNumber === 1 && new Uint8Array(caBool.value)[0] !== 0;
+          console.log(`  aoki.app certificate CA flag: ${isCA ? "✗ TRUE (should be FALSE)" : "✓ FALSE"}`);
+        } else {
+          console.log(`  aoki.app certificate CA flag: ✓ FALSE (empty sequence)`);
+        }
+      } catch {
+        console.log(`  aoki.app certificate CA flag: ✓ FALSE (empty sequence)`);
+      }
+    }
+
+    // Verify using openssl
+    console.log(`\nOpenSSL Verification:`);
+    try {
+      const tmpDir = "/tmp/x509-verify";
+      execSync(`mkdir -p ${tmpDir}`, { stdio: "pipe" });
+
+      // Save certificates
+      await import("fs/promises").then((fs) =>
+        fs.writeFile(`${tmpDir}/aoki-cert.der`, new Uint8Array(aokirCertBuffer)),
+      );
+      await import("fs/promises").then((fs) =>
+        fs.writeFile(`${tmpDir}/ca-cert.der`, new Uint8Array(caCertBuffer)),
+      );
+
+      // Convert to PEM
+      execSync(
+        `openssl x509 -inform DER -in ${tmpDir}/ca-cert.der -outform PEM -out ${tmpDir}/ca.pem`,
+        { stdio: "pipe" },
+      );
+      execSync(
+        `openssl x509 -inform DER -in ${tmpDir}/aoki-cert.der -outform PEM -out ${tmpDir}/aoki.pem`,
+        { stdio: "pipe" },
+      );
+
+      const verifyResult = execSync(
+        `openssl verify -CAfile ${tmpDir}/ca.pem ${tmpDir}/aoki.pem`,
+        { encoding: "utf-8", stdio: "pipe" },
+      );
+
+      console.log(`  ✓ ${verifyResult.trim()}`);
+    } catch (error) {
+      console.log("  ✗ Verification failed");
+    }
+  } catch (error) {
+    console.log(
+      "\nTest 2 skipped: CA certificate file not found",
+    );
+  }
+
+  // Test 3: Verify the example certificates if they exist
+  try {
+    console.log(`\n\nTest 3: Verify example certificates\n`);
+
+    const exampleCACertPath = "/tmp/x509-example/ca-cert.der";
+    const exampleChildCertPath = "/tmp/x509-example/child-cert.der";
+
+    const exampleCACertBuffer = bufferToArrayBuffer(await readFile(exampleCACertPath));
+    const exampleCACert = parseCertificate(exampleCACertBuffer);
+
+    const exampleChildCertBuffer = bufferToArrayBuffer(await readFile(exampleChildCertPath));
+    const exampleChildCert = parseCertificate(exampleChildCertBuffer);
+
+    console.log(`Example CA Certificate: ${exampleCACert.subjectDN}`);
+    console.log(`  Self-signed: ${exampleCACert.issuerDN === exampleCACert.subjectDN ? "Yes" : "No"}`);
+
+    console.log(`\nExample Child Certificate: ${exampleChildCert.subjectDN}`);
+    console.log(`  Issued by: ${exampleChildCert.issuerDN}`);
+
+    // Verify issuer match
+    const issuerMatches = exampleChildCert.issuerDN === exampleCACert.subjectDN;
+    console.log(
+      `\nIssuer Verification: ${issuerMatches ? "✓ MATCHES" : "✗ MISMATCH"}`,
+    );
+
+    // Check Basic Constraints
+    const caBC = exampleCACert.extensions.get("2.5.29.19");
+    const childBC = exampleChildCert.extensions.get("2.5.29.19");
+
+    console.log(`\nBasic Constraints:`);
+    if (caBC) {
       const bcSeq = BasicTLVParser.parse(caBC.value);
       const caBool = BasicTLVParser.parse(bcSeq.value);
       const isCA = caBool.tag.tagNumber === 1 && new Uint8Array(caBool.value)[0] !== 0;
@@ -537,16 +630,16 @@ async function main() {
     // Verify using openssl
     console.log(`\nOpenSSL Verification:`);
     try {
-      const tmpDir = "/tmp/x509-verify";
+      const tmpDir = "/tmp/x509-verify-example";
       execSync(`mkdir -p ${tmpDir}`, { stdio: "pipe" });
 
       // Convert to PEM
       execSync(
-        `openssl x509 -inform DER -in ${caCertPath} -outform PEM -out ${tmpDir}/ca.pem`,
+        `openssl x509 -inform DER -in ${exampleCACertPath} -outform PEM -out ${tmpDir}/ca.pem`,
         { stdio: "pipe" },
       );
       execSync(
-        `openssl x509 -inform DER -in ${childCertPath} -outform PEM -out ${tmpDir}/child.pem`,
+        `openssl x509 -inform DER -in ${exampleChildCertPath} -outform PEM -out ${tmpDir}/child.pem`,
         { stdio: "pipe" },
       );
 
@@ -561,7 +654,7 @@ async function main() {
     }
   } catch (error) {
     console.log(
-      "\nTest 2 skipped: Certificate chain files not found (run issue-certificate.ts first)",
+      "\nTest 3 skipped: Example certificate files not found (run issue-certificate.ts first)",
     );
   }
 

@@ -2,7 +2,7 @@
  * X.509 Certificate Decoding Example
  *
  * This example demonstrates how to parse and decode a real X.509 certificate
- * using the @aokiapp/tlv library with BasicTLVParser.
+ * downloaded from https://aoki.app using the @aokiapp/tlv library.
  *
  * X.509 Certificate Structure (RFC 5280):
  * Certificate ::= SEQUENCE {
@@ -168,9 +168,11 @@ function parseExtensions(buffer: ArrayBuffer): Extension[] {
 async function main() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const certPath = path.resolve(__dirname, "sample-cert.der");
+  // Use the actual certificate from https://aoki.app
+  const certPath = path.resolve(__dirname, "aoki-app-cert.der");
 
   console.log("=== X.509 Certificate Decoding Example ===\n");
+  console.log("This example decodes the actual certificate from https://aoki.app\n");
 
   // Read the DER-encoded certificate file
   const derFile = await readFile(certPath);
