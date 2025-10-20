@@ -26,7 +26,7 @@ node ~/codes/aokiapp/aqn1/bin/aqn1 "@pretty" < examples/x509/cert.der
 - examples/x509/* 以外の場所にコードを書いてはいけない
 - スキーマを組み立てることがあるだろう。Schemaを格納する一時変数を作らないでほしい。constructedの子アイテムがあればそれを変数を介して代入するのではなく、直接書いてほしい。但し複数回利用されるものは除く。
   - なぜ重要なのか？入れ子構造が深くなったときに、スキーマの構造が変数を介在させることで見えづらくなるから。
--  examples/x509/schemas/builder.ts , examples/x509/schemas/parser.ts, examples/x509/schemas/common.ts ファイルを作れ。  そこにスキーマをまとめてほしい。1ファイルに複数のスキーマをexportしてよいが、不要なexportはしないこと。
+-  examples/x509/schemas/builder.ts , examples/x509/schemas/parser.ts, examples/x509/schemas/common.ts, examples/x509/schemas/extn.ts ファイルを作れ。  そこにスキーマをまとめてほしい。1ファイルに複数のスキーマをexportしてよいが、不要なexportはしないこと。
 - スキーマにP_RDNSchema B_CertReqみたいなprefixの利用をするくらいなら、createParseSchema みたいな関数を作りその中で組み立てるようにしてよ。というかスキーマ専用ファイルがあるから名前は被らないよね？
 - BasicBuilder/BasicParserを使う前にquestionで確認を取ること
 - OIDはバイナリのままにしておくのではなく、文字列で表現すること。例えば "1.2.840.113549.1.1.11" のようにすること。
@@ -76,3 +76,21 @@ node ~/codes/aokiapp/aqn1/bin/aqn1 "@pretty" < examples/x509/cert.der
 
 - メモ作成ポリシー（今回の反省点）:
   - 完了事実ではなく、分岐点での判断理由・採否の根拠を先に記す。次回以降、スキーマ調整時はその場で「何を捨て、何を残したか」を言語化する運用にする。
+- メモ追記（extnValueの意味づけ外部インタプリタ方針の確立）:
+  - パース／ビルドのスキーマは変更せず、extnValueの意味づけは外部インタプリタで行う方針を採用。該当箇所は [`createParseSchema()`](examples/x509/schemas/parser.ts:29), [`decodeExtnValue()`](examples/x509/schemas/parser.ts:14), [`createBuildSchema()`](examples/x509/schemas/builder.ts:28), [`encodeExtnValue()`](examples/x509/schemas/builder.ts:15)。
+  - 意味づけのインタプリタは [`interpretExtnValue()`](examples/x509/schemas/common.ts:208) を利用。内側DERの構築には [`encodeExtnValueFromMeaning()`](examples/x509/schemas/common.ts:280) を用いる。いずれも SchemaParser/SchemaBuilder のみを使用（Basic系不使用）。
+  - 対応済みOID:
+    - keyUsage (2.5.29.15): 内側BIT STRINGは [`getKeyUsageParseSchema()`](examples/x509/schemas/common.ts:146) で解析し、ビットフラグを導出。ビルドは [`getKeyUsageBuildSchema()`](examples/x509/schemas/common.ts:224) とフラグ→ビット列変換で復元。基礎コーデックは [`decodeBitStringHex()`](src/common/codecs.ts:132), [`encodeBitString()`](src/common/codecs.ts:142)。
+    - basicConstraints (2.5.29.19): 内側SEQUENCEは [`getBasicConstraintsParseSchema()`](examples/x509/schemas/common.ts:150) で解析（cA, pathLenConstraintはoptional）。ビルドは [`getBasicConstraintsBuildSchema()`](examples/x509/schemas/common.ts:231) により復元。
+  - ラウンドトリップの保持:
+    - parse/buildのスキーマは常に `{ hex }` のOCTET STRING表現を保持し、unknown OIDはそのまま `{ hex }` のままにする。known OIDについてのみ、解析後に意味を付与する（外部インタプリタ）。ビルド時も既定は `{ hex }` を使い、必要に応じて意味構造から内側DERを生成して `{ hex }` に戻す。
+  - 型方針:
+    - `any`/`as` 禁止の原則を維持。意味付き構造は `ExtensionMeaning` ユニオンで表現し、関数間の入出力は型整合を保つ（[`interpretExtnValue()`](examples/x509/schemas/common.ts:208), [`encodeExtnValueFromMeaning()`](examples/x509/schemas/common.ts:280)）。
+  - スキーマ構成の維持:
+    - 解析・組み立ては既存のスキーマ内に直接記述し、深い入れ子で一時変数を導入しないという原則を継続（[`createParseSchema()`](examples/x509/schemas/parser.ts:29), [`createBuildSchema()`](examples/x509/schemas/builder.ts:28)）。
+  - 追加予定:
+    - subjectAltName (2.5.29.17): 外部インタプリタで GeneralNames（SEQUENCE OF GeneralName）を扱う内側スキーマを準備予定。parse/build本体は変更せず、common.ts側にだけ追加する。
+  - コンプライアンス確認（今回のターン）:
+    - examples/x509/* のみ編集。ライブラリ本体src/*は未変更。
+    - parse/buildの実装は動作上変更なし（コメント挿入なしのまま）。extnValueの意味づけは外部インタプリタに限定。
+    - OIDは文字列扱い（参考: [`encodeOID()`](src/common/codecs.ts:83), [`decodeOID()`](src/common/codecs.ts:106)）。

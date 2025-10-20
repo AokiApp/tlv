@@ -17,6 +17,7 @@ import { bufferToArrayBuffer, toHex } from "../../src/common/codecs.ts";
 
 import { createParseSchema } from "./schemas/parser.ts";
 import { createBuildSchema } from "./schemas/builder.ts";
+import { parseExtnValues } from "./schemas/extn.ts";
 
 function normalizeForDisplay(value: unknown): unknown {
   if (value instanceof ArrayBuffer) return toHex(value);
@@ -55,9 +56,10 @@ async function main() {
   const parser = new SchemaParser(parseSchema, { strict: true });
   const parsed = parser.parse(der);
 
-  // Display a normalized JSON
-  const normalized = normalizeForDisplay(parsed);
-  console.log("Parsed certificate (normalized):");
+  // Display a normalized JSON (with extnMeaning and summaries)
+  let normalized = parseExtnValues(parsed);
+  normalized = normalizeForDisplay(normalized);
+  console.log("Parsed certificate (normalized + extn summaries):");
   console.log(JSON.stringify(normalized, null, 2));
 
   // Rebuild
