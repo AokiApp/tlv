@@ -7,7 +7,7 @@ import {
   BasicTLVBuilder,
 } from "../../../src/builder";
 import { TagClass } from "../../../src/common/types";
-import { toHex } from "../../../src/common/codecs";
+import { identity, toHex } from "../../../src/common/codecs";
 
 function toHexBuf(buf: ArrayBuffer): string {
   return toHex(new Uint8Array(buf));
@@ -135,10 +135,14 @@ describe("Builder SET ordering (strict gating)", () => {
 
 describe("Builder raw encode paths (no encoder provided)", () => {
   it("accepts ArrayBuffer when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", {
-      tagClass: TagClass.Universal,
-      tagNumber: 5,
-    });
+    const rawSchema = BSchema.primitive(
+      "raw",
+      {
+        tagClass: TagClass.Universal,
+        tagNumber: 5,
+      },
+      identity,
+    );
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([0xaa, 0xbb]).buffer;
     const built = builder.build(data);
@@ -147,10 +151,14 @@ describe("Builder raw encode paths (no encoder provided)", () => {
   });
 
   it("accepts Uint8Array and copies bytes when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", {
-      tagClass: TagClass.Universal,
-      tagNumber: 6,
-    });
+    const rawSchema = BSchema.primitive(
+      "raw",
+      {
+        tagClass: TagClass.Universal,
+        tagNumber: 6,
+      },
+      identity,
+    );
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([1, 2, 3]);
     const built = builder.build(data.buffer);
@@ -215,7 +223,7 @@ describe("Builder nested constructed and errors", () => {
   });
 
   it("BSchema.primitive requires tagNumber", () => {
-    assert.throws(() => BSchema.primitive("raw", {} as any));
+    assert.throws(() => BSchema.primitive("raw", {} as any, identity));
   });
 });
 

@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import assert from "assert";
 import { Schema as PSchema, SchemaParser } from "../../../src/parser";
 import { fromHexString } from "../../helpers/utils";
+import { identity } from "../../../src/common";
 
 describe("SEQUENCE: tail optional skip when content ends", () => {
   it("skips trailing optional field at end-of-content", () => {
@@ -89,7 +90,7 @@ describe("Depth guard: throws when exceeding maxDepth", () => {
 
 describe("Default decode: primitive returns raw buffer when no decode provided", () => {
   it("primitive without decode returns ArrayBuffer", () => {
-    const prim = PSchema.primitive("octets", { tagNumber: 0x04 });
+    const prim = PSchema.primitive("octets", { tagNumber: 0x04 }, identity);
     const buf = fromHexString("04024869"); // OCTET STRING 'Hi'
     const parsed = new SchemaParser(prim).parse(buf);
     assert(
