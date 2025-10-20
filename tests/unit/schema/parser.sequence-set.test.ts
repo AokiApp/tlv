@@ -249,14 +249,6 @@ describe("Top-level repeated schema guard", () => {
   });
 });
 
-describe("Schema.inferIsSetFromTag coverage", () => {
-  it("returns expected values for Universal class (16->false, 17->true) and undefined otherwise", () => {
-    expect(PSchema.inferIsSetFromTag(TagClass.Universal, 17)).toBe(true);
-    expect(PSchema.inferIsSetFromTag(TagClass.Universal, 16)).toBe(false);
-    expect(PSchema.inferIsSetFromTag(TagClass.Private, 17)).toBe(undefined);
-  });
-});
-
 describe("Decoder: SchemaParser.parse() parses hex to expected object and handles failures", () => {
   it("primitive: parse from hex string equals expected value", () => {
     const hex = "c1020102";

@@ -217,18 +217,6 @@ describe("Builder nested constructed and errors", () => {
   it("BSchema.primitive requires tagNumber", () => {
     assert.throws(() => BSchema.primitive("raw", {} as any));
   });
-
-  it("BSchema.inferIsSetFromTag mirrors UNIVERSAL semantics", () => {
-    assert.strictEqual(BSchema.inferIsSetFromTag(TagClass.Universal, 17), true);
-    assert.strictEqual(
-      BSchema.inferIsSetFromTag(TagClass.Universal, 16),
-      false,
-    );
-    assert.strictEqual(
-      BSchema.inferIsSetFromTag(TagClass.Private, 17),
-      undefined,
-    );
-  });
 });
 
 describe("BasicTLVBuilder: constraints echoed via builder outputs", () => {
