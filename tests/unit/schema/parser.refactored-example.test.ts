@@ -12,14 +12,9 @@
  * 4. Logical grouping of related test cases
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "vitest";
 import assert from "assert";
-import {
-  Schema as PSchema,
-  SchemaParser,
-  BasicTLVParser,
-} from "../../../src/parser";
-import { TagClass } from "../../../src/common/types";
+import { Schema as PSchema, SchemaParser } from "../../../src/parser";
 import { fromHexString } from "../../helpers/utils";
 
 describe("SchemaParser: Strict Mode Behavior", () => {
