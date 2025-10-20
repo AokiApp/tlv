@@ -9,7 +9,7 @@ Tag-Length-Value (TLV) parser and builder library with schema support. Provides 
 - **Modular API**: Separate parser and builder modules for focused usage
 - **TypeScript-first**: Complete type safety with inferred types from schemas
 - **ASN.1 compatible**: Support for various ASN.1 constructs (SEQUENCE, SET, primitives, etc.)
-- **Real-world examples**: Includes CMS (RFC 5652) and CRCL implementations
+- **Real-world examples**: Includes CMS (RFC 5652), CRCL, and X.509 certificate implementations
 
 ## Installation
 
@@ -543,10 +543,31 @@ npm run publish       # Publish to npm
 │   └── utils/           # Encoding/decoding utilities
 ├── examples/
 │   ├── cms/             # CMS (RFC 5652) examples
-│   └── crcl/            # CRCL certificate request examples
+│   ├── crcl/            # CRCL certificate request examples
+│   └── x509/            # X.509 certificate examples
 ├── tests/               # Test suite
 └── dist/                # Compiled output
 ```
+
+## Examples
+
+### X.509 Certificates
+
+The `examples/x509/` directory contains comprehensive examples for working with X.509 certificates:
+
+- **decode-certificate.ts**: Parse and decode X.509 certificates, extracting all fields including extensions
+- **issue-certificate.ts**: Create a CA certificate and issue child certificates with proper signing
+- **verify-certificate.ts**: Verify certificate chains, check validity periods, and validate CN/SAN hostnames
+
+See [`examples/x509/README.md`](examples/x509/README.md) for detailed documentation.
+
+### CMS (Cryptographic Message Syntax)
+
+The `examples/cms/` directory demonstrates CMS SignedData structures as defined in RFC 5652.
+
+### CRCL (Certificate Request)
+
+The `examples/crcl/` directory shows how to parse certificate request messages.
 
 ## Supported Encoders/Decoders
 
