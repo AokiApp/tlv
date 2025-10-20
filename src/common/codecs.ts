@@ -2,6 +2,10 @@
  * Common encode/decode utilities for TLV ASN.1 DER operations
  */
 
+export function identity(ab: ArrayBuffer): ArrayBuffer {
+  return ab;
+}
+
 export function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
   const out = new ArrayBuffer(buf.byteLength);
   new Uint8Array(out).set(
@@ -41,7 +45,7 @@ export function decodeAscii(buffer: ArrayBuffer): string {
 
 export function encodeInteger(n: number): ArrayBuffer {
   if (!Number.isFinite(n) || n < 0) {
-    throw new Error("Only non-negative INTEGER supported");
+    throw new Error(`INTEGER must be non-negative finite number; got ${n}`);
   }
   if (n === 0) return new Uint8Array([0x00]).buffer;
   const out: number[] = [];
@@ -82,7 +86,8 @@ export function encodeOID(oid: string): ArrayBuffer {
     if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid OID arc: ${s}`);
     return Math.floor(n);
   });
-  if (arcs.length < 2) throw new Error("OID must have at least two arcs");
+  if (arcs.length < 2)
+    throw new Error(`OID must have at least two arcs; got '${oid}'`);
   const first = arcs[0];
   const second = arcs[1];
   let firstByte = 0;
@@ -100,7 +105,7 @@ export function encodeOID(oid: string): ArrayBuffer {
 
 export function decodeOID(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  if (bytes.length === 0) throw new Error("Empty OID encoding");
+  if (bytes.length === 0) throw new Error("Empty OID encoding (0 bytes)");
   const firstByte = bytes[0];
   let first = Math.floor(firstByte / 40);
   let second = firstByte % 40;
@@ -114,7 +119,8 @@ export function decodeOID(buffer: ArrayBuffer): string {
     let val = 0;
     let b: number;
     do {
-      if (i >= bytes.length) throw new Error("Truncated OID");
+      if (i >= bytes.length)
+        throw new Error(`Truncated OID at byte index ${i}`);
       b = bytes[i++];
       val = (val << 7) | (b & 0x7f);
     } while (b & 0x80);

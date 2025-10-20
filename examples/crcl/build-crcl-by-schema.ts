@@ -20,349 +20,480 @@ import {
   TagClass,
 } from "../../src/parser/index.ts";
 import { SchemaBuilder, Schema as BSchema } from "../../src/builder/index.ts";
-import { bufferToArrayBuffer } from "../../src/utils/codecs.ts";
+import {
+  bufferToArrayBuffer,
+  toHex,
+  decodeUtf8,
+  encodeUtf8,
+  decodeAscii,
+  decodeInteger,
+  encodeInteger,
+  decodeOID,
+  encodeOID,
+  decodeBitStringHex,
+  encodeBitString,
+} from "../../src/common/codecs.ts";
 
-// -----------------------------
-// Raw Parser Schemas (no decoders)
-// -----------------------------
+// Local helpers for codecs completeness
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.trim();
+  if (clean.length % 2 !== 0) throw new Error("Invalid hex string length");
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+function encodeAscii(str: string): ArrayBuffer {
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) > 0x7f) throw new Error("Non-ASCII character");
+  }
+  return new TextEncoder().encode(str).buffer;
+}
+function decodeNull(_buffer: ArrayBuffer): null {
+  return null;
+}
+function encodeNull(_v: unknown): ArrayBuffer {
+  return new Uint8Array(0).buffer;
+}
+// Ensure ArrayBuffer return type (not ArrayBufferLike) for builder encoders
+function u8ToArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(u8.length);
+  new Uint8Array(buf).set(u8);
+  return buf;
+}
 
-// AttributeTypeAndValue ::= SEQUENCE { type OID, value UTF8String }
-const AttributeTypeAndValue_RAW = PSchema.constructed(
-  "attribute",
-  [
-    PSchema.primitive("type", undefined, { tagNumber: 6 }),
-    PSchema.primitive("value", undefined, { tagNumber: 12 }),
-  ],
-  { tagNumber: 16 },
-);
+function genParseSchema() {
+  // Inline, no intermediate variables; return only the top-level schema
+  return PSchema.constructed("PKIMessage", { tagNumber: 16 }, [
+    // header
+    PSchema.constructed("header", { tagNumber: 16 }, [
+      PSchema.primitive("pvno", { tagNumber: 2 }, decodeInteger),
+      PSchema.constructed(
+        "sender",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+        [PSchema.constructed("name", { tagNumber: 16 }, [])],
+      ),
+      PSchema.constructed(
+        "recipient",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+        [PSchema.constructed("name", { tagNumber: 16 }, [])],
+      ),
+    ]),
 
-// RelativeDistinguishedName ::= SET { AttributeTypeAndValue }
-const RDN1_RAW = PSchema.constructed("rdn1", [AttributeTypeAndValue_RAW], {
-  tagNumber: 17,
-});
-const RDN2_RAW = PSchema.constructed("rdn2", [AttributeTypeAndValue_RAW], {
-  tagNumber: 17,
-});
-
-const Name_RAW = PSchema.constructed("name", [RDN1_RAW, RDN2_RAW], {
-  tagNumber: 16,
-});
-
-const GeneralNameEmpty_RAW = PSchema.constructed("name", [], { tagNumber: 16 });
-
-const Header_RAW = PSchema.constructed(
-  "header",
-  [
-    PSchema.primitive("pvno", undefined, { tagNumber: 2 }),
-    PSchema.constructed("sender", [GeneralNameEmpty_RAW], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 4,
-    }),
-    PSchema.constructed("recipient", [GeneralNameEmpty_RAW], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 4,
-    }),
-  ],
-  { tagNumber: 16 },
-);
-
-const AlgorithmIdentifier_RAW = PSchema.constructed(
-  "algorithmIdentifier",
-  [
-    PSchema.primitive("algorithm", undefined, { tagNumber: 6 }),
-    PSchema.primitive("parameters", undefined, { tagNumber: 5 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const SubjectPublicKeyInfo_RAW = PSchema.constructed(
-  "publicKey",
-  [
+    // body [0]
     PSchema.constructed(
-      "algorithm",
+      "body",
+      { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
       [
-        PSchema.primitive("algorithm", undefined, { tagNumber: 6 }),
-        PSchema.primitive("parameters", undefined, { tagNumber: 5 }),
+        // CertReqMessages
+        PSchema.constructed("certReq", { tagNumber: 16 }, [
+          PSchema.repeated(
+            "items",
+            {},
+            // CertReqMsg
+            PSchema.constructed("certReqMsg", { tagNumber: 16 }, [
+              // CertRequest
+              PSchema.constructed("certReq", { tagNumber: 16 }, [
+                PSchema.primitive("certReqId", { tagNumber: 2 }, decodeInteger),
+
+                // CertTemplate
+                PSchema.constructed("certTemplate", { tagNumber: 16 }, [
+                  // subject [5] Name (SEQUENCE OF RDN where RDN is SET OF AttributeTypeAndValue)
+                  PSchema.constructed(
+                    "subject",
+                    {
+                      tagClass: TagClass.ContextSpecific,
+                      tagNumber: 5,
+                      optional: true,
+                    },
+                    [
+                      PSchema.constructed("name", { tagNumber: 16 }, [
+                        PSchema.repeated(
+                          "rdns",
+                          {},
+                          PSchema.constructed(
+                            "rdn",
+                            { tagNumber: 17, isSet: true },
+                            [
+                              PSchema.constructed(
+                                "attribute",
+                                { tagNumber: 16 },
+                                [
+                                  PSchema.primitive(
+                                    "type",
+                                    { tagNumber: 6 },
+                                    decodeOID,
+                                  ),
+                                  PSchema.primitive(
+                                    "value",
+                                    { tagNumber: 12 },
+                                    decodeUtf8,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ),
+
+                  // publicKey [6] SubjectPublicKeyInfo
+                  PSchema.constructed(
+                    "publicKey",
+                    { tagClass: TagClass.ContextSpecific, tagNumber: 6 },
+                    [
+                      PSchema.constructed(
+                        "algorithmIdentifier",
+                        { tagNumber: 16 },
+                        [
+                          PSchema.primitive(
+                            "algorithm",
+                            { tagNumber: 6 },
+                            decodeOID,
+                          ),
+                          PSchema.primitive(
+                            "parameters",
+                            { tagNumber: 5, optional: true },
+                            decodeNull,
+                          ),
+                        ],
+                      ),
+                      PSchema.primitive(
+                        "subjectPublicKey",
+                        { tagNumber: 3 },
+                        decodeBitStringHex,
+                      ),
+                    ],
+                  ),
+
+                  // extensions [9]
+                  PSchema.constructed(
+                    "extensions",
+                    { tagClass: TagClass.ContextSpecific, tagNumber: 9 },
+                    [
+                      PSchema.constructed(
+                        "registeredCorporationInfo",
+                        { tagNumber: 16 },
+                        [
+                          PSchema.primitive(
+                            "extnId",
+                            { tagNumber: 6 },
+                            decodeOID,
+                          ),
+                          PSchema.primitive(
+                            "extnValue",
+                            { tagNumber: 4 },
+                            toHex,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ]),
+              ]),
+
+              // pop [1] POPOSigningKey
+              PSchema.constructed(
+                "pop",
+                { tagClass: TagClass.ContextSpecific, tagNumber: 1 },
+                [
+                  PSchema.constructed(
+                    "algorithmIdentifier",
+                    { tagNumber: 16 },
+                    [
+                      PSchema.primitive(
+                        "algorithm",
+                        { tagNumber: 6 },
+                        decodeOID,
+                      ),
+                      PSchema.primitive(
+                        "parameters",
+                        { tagNumber: 5, optional: true },
+                        decodeNull,
+                      ),
+                    ],
+                  ),
+                  PSchema.primitive(
+                    "signature",
+                    { tagNumber: 3 },
+                    decodeBitStringHex,
+                  ),
+                ],
+              ),
+
+              // regInfo (optional)
+              PSchema.constructed(
+                "regInfo",
+                { tagNumber: 16, optional: true },
+                [
+                  // suspensionSecretCode Attribute
+                  PSchema.constructed(
+                    "suspensionSecretCode",
+                    { tagNumber: 16 },
+                    [
+                      PSchema.primitive("type", { tagNumber: 6 }, decodeOID),
+                      // SuspensionSecretCode
+                      PSchema.constructed("value", { tagNumber: 16 }, [
+                        PSchema.constructed(
+                          "hashAlg",
+                          { tagNumber: 16, optional: true },
+                          [
+                            PSchema.primitive(
+                              "algorithm",
+                              { tagNumber: 6 },
+                              decodeOID,
+                            ),
+                            PSchema.primitive(
+                              "parameters",
+                              { tagNumber: 5, optional: true },
+                              decodeNull,
+                            ),
+                          ],
+                        ),
+                        PSchema.primitive(
+                          "hashedSecretCode",
+                          { tagNumber: 4 },
+                          toHex,
+                        ),
+                      ]),
+                    ],
+                  ),
+                  // timeLimit Attribute
+                  PSchema.constructed("timeLimit", { tagNumber: 16 }, [
+                    PSchema.primitive("type", { tagNumber: 6 }, decodeOID),
+                    PSchema.primitive("value", { tagNumber: 4 }, decodeAscii),
+                  ]),
+                ],
+              ),
+            ]),
+          ),
+        ]),
       ],
-      { tagNumber: 16 },
     ),
-    PSchema.primitive("subjectPublicKey", undefined, { tagNumber: 3 }),
-  ],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 6 },
-);
+  ]);
+}
 
-const RegisteredCorporationInfoExtension_RAW = PSchema.constructed(
-  "registeredCorporationInfo",
-  [
-    PSchema.primitive("extnId", undefined, { tagNumber: 6 }),
-    // OCTET STRING containing inner DER
-    PSchema.primitive("extnValue", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
+function genBuildSchema() {
+  // Inline, no intermediate variables; return only the top-level schema
+  return BSchema.constructed("PKIMessage", { tagNumber: 16 }, [
+    // header
+    BSchema.constructed("header", { tagNumber: 16 }, [
+      BSchema.primitive("pvno", { tagNumber: 2 }, encodeInteger),
+      BSchema.constructed(
+        "sender",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+        [BSchema.constructed("name", { tagNumber: 16 }, [])],
+      ),
+      BSchema.constructed(
+        "recipient",
+        { tagClass: TagClass.ContextSpecific, tagNumber: 4 },
+        [BSchema.constructed("name", { tagNumber: 16 }, [])],
+      ),
+    ]),
 
-const Extensions_RAW = PSchema.constructed(
-  "extensions",
-  [RegisteredCorporationInfoExtension_RAW],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 9 },
-);
-
-const CertTemplate_RAW = PSchema.constructed(
-  "certTemplate",
-  [
-    PSchema.constructed("subject", [Name_RAW], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 5,
-    }),
-    SubjectPublicKeyInfo_RAW,
-    Extensions_RAW,
-  ],
-  { tagNumber: 16 },
-);
-
-const CertRequest_RAW = PSchema.constructed(
-  "certReq",
-  [
-    PSchema.primitive("certReqId", undefined, { tagNumber: 2 }),
-    CertTemplate_RAW,
-  ],
-  { tagNumber: 16 },
-);
-
-const POPOSigningKey_RAW = PSchema.constructed(
-  "pop",
-  [
-    AlgorithmIdentifier_RAW,
-    PSchema.primitive("signature", undefined, { tagNumber: 3 }),
-  ],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 1 },
-);
-
-const SuspensionSecretCode_RAW = PSchema.constructed(
-  "value",
-  [
-    AlgorithmIdentifier_RAW,
-    PSchema.primitive("hashedSecretCode", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfoSuspension_RAW = PSchema.constructed(
-  "suspensionSecretCode",
-  [
-    PSchema.primitive("type", undefined, { tagNumber: 6 }),
-    SuspensionSecretCode_RAW,
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfoTimeLimit_RAW = PSchema.constructed(
-  "timeLimit",
-  [
-    PSchema.primitive("type", undefined, { tagNumber: 6 }),
-    PSchema.primitive("value", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfo_RAW = PSchema.constructed(
-  "regInfo",
-  [RegInfoSuspension_RAW, RegInfoTimeLimit_RAW],
-  { tagNumber: 16 },
-);
-
-const CertReqMsg_RAW = PSchema.constructed(
-  "certReqMsg",
-  [CertRequest_RAW, POPOSigningKey_RAW, RegInfo_RAW],
-  { tagNumber: 16 },
-);
-
-// CertReqMessages (observed single entry) as plain SEQUENCE with one element
-const CertReqMessages_RAW = PSchema.constructed("certReq", [CertReqMsg_RAW], {
-  tagNumber: 16,
-});
-
-const Body_RAW = PSchema.constructed("body", [CertReqMessages_RAW], {
-  tagClass: TagClass.ContextSpecific,
-  tagNumber: 0,
-});
-
-const PKIMessage_RAW = PSchema.constructed(
-  "PKIMessage",
-  [Header_RAW, Body_RAW],
-  { tagNumber: 16 },
-);
-
-// -----------------------------
-// Builder Schemas (mirror of raw)
-// -----------------------------
-
-const AttributeTypeAndValue_BUILD = BSchema.constructed(
-  "attribute",
-  [
-    BSchema.primitive("type", undefined, { tagNumber: 6 }),
-    BSchema.primitive("value", undefined, { tagNumber: 12 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const RDN1_BUILD = BSchema.constructed("rdn1", [AttributeTypeAndValue_BUILD], {
-  tagNumber: 17,
-});
-const RDN2_BUILD = BSchema.constructed("rdn2", [AttributeTypeAndValue_BUILD], {
-  tagNumber: 17,
-});
-
-const Name_BUILD = BSchema.constructed("name", [RDN1_BUILD, RDN2_BUILD], {
-  tagNumber: 16,
-});
-
-const GeneralNameEmpty_BUILD = BSchema.constructed("name", [], {
-  tagNumber: 16,
-});
-
-const Header_BUILD = BSchema.constructed(
-  "header",
-  [
-    BSchema.primitive("pvno", undefined, { tagNumber: 2 }),
-    BSchema.constructed("sender", [GeneralNameEmpty_BUILD], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 4,
-    }),
-    BSchema.constructed("recipient", [GeneralNameEmpty_BUILD], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 4,
-    }),
-  ],
-  { tagNumber: 16 },
-);
-
-const AlgorithmIdentifier_BUILD = BSchema.constructed(
-  "algorithmIdentifier",
-  [
-    BSchema.primitive("algorithm", undefined, { tagNumber: 6 }),
-    BSchema.primitive("parameters", undefined, { tagNumber: 5 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const SubjectPublicKeyInfo_BUILD = BSchema.constructed(
-  "publicKey",
-  [
+    // body [0]
     BSchema.constructed(
-      "algorithm",
+      "body",
+      { tagClass: TagClass.ContextSpecific, tagNumber: 0 },
       [
-        BSchema.primitive("algorithm", undefined, { tagNumber: 6 }),
-        BSchema.primitive("parameters", undefined, { tagNumber: 5 }),
+        // CertReqMessages
+        BSchema.constructed("certReq", { tagNumber: 16 }, [
+          BSchema.repeated(
+            "items",
+            {},
+            // CertReqMsg
+            BSchema.constructed("certReqMsg", { tagNumber: 16 }, [
+              // CertRequest
+              BSchema.constructed("certReq", { tagNumber: 16 }, [
+                BSchema.primitive("certReqId", { tagNumber: 2 }, encodeInteger),
+
+                // CertTemplate
+                BSchema.constructed("certTemplate", { tagNumber: 16 }, [
+                  // subject [5] Name (SEQUENCE OF RDN where RDN is SET OF AttributeTypeAndValue)
+                  BSchema.constructed(
+                    "subject",
+                    {
+                      tagClass: TagClass.ContextSpecific,
+                      tagNumber: 5,
+                      optional: true,
+                    },
+                    [
+                      BSchema.constructed("name", { tagNumber: 16 }, [
+                        BSchema.repeated(
+                          "rdns",
+                          {},
+                          BSchema.constructed(
+                            "rdn",
+                            { tagNumber: 17, isSet: true },
+                            [
+                              BSchema.constructed(
+                                "attribute",
+                                { tagNumber: 16 },
+                                [
+                                  BSchema.primitive(
+                                    "type",
+                                    { tagNumber: 6 },
+                                    encodeOID,
+                                  ),
+                                  BSchema.primitive(
+                                    "value",
+                                    { tagNumber: 12 },
+                                    encodeUtf8,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ),
+
+                  // publicKey [6] SubjectPublicKeyInfo
+                  BSchema.constructed(
+                    "publicKey",
+                    { tagClass: TagClass.ContextSpecific, tagNumber: 6 },
+                    [
+                      BSchema.constructed(
+                        "algorithmIdentifier",
+                        { tagNumber: 16 },
+                        [
+                          BSchema.primitive(
+                            "algorithm",
+                            { tagNumber: 6 },
+                            encodeOID,
+                          ),
+                          BSchema.primitive(
+                            "parameters",
+                            { tagNumber: 5, optional: true },
+                            encodeNull,
+                          ),
+                        ],
+                      ),
+                      BSchema.primitive(
+                        "subjectPublicKey",
+                        { tagNumber: 3 },
+                        (v: { unusedBits: number; hex: string }) =>
+                          encodeBitString({
+                            unusedBits: v.unusedBits,
+                            data: hexToBytes(v.hex),
+                          }),
+                      ),
+                    ],
+                  ),
+
+                  // extensions [9]
+                  BSchema.constructed(
+                    "extensions",
+                    { tagClass: TagClass.ContextSpecific, tagNumber: 9 },
+                    [
+                      BSchema.constructed(
+                        "registeredCorporationInfo",
+                        { tagNumber: 16 },
+                        [
+                          BSchema.primitive(
+                            "extnId",
+                            { tagNumber: 6 },
+                            encodeOID,
+                          ),
+                          BSchema.primitive(
+                            "extnValue",
+                            { tagNumber: 4 },
+                            (hex: string) => u8ToArrayBuffer(hexToBytes(hex)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ]),
+              ]),
+
+              // pop [1] POPOSigningKey
+              BSchema.constructed(
+                "pop",
+                { tagClass: TagClass.ContextSpecific, tagNumber: 1 },
+                [
+                  BSchema.constructed(
+                    "algorithmIdentifier",
+                    { tagNumber: 16 },
+                    [
+                      BSchema.primitive(
+                        "algorithm",
+                        { tagNumber: 6 },
+                        encodeOID,
+                      ),
+                      BSchema.primitive(
+                        "parameters",
+                        { tagNumber: 5, optional: true },
+                        encodeNull,
+                      ),
+                    ],
+                  ),
+                  BSchema.primitive(
+                    "signature",
+                    { tagNumber: 3 },
+                    (v: { unusedBits: number; hex: string }) =>
+                      encodeBitString({
+                        unusedBits: v.unusedBits,
+                        data: hexToBytes(v.hex),
+                      }),
+                  ),
+                ],
+              ),
+
+              // regInfo (optional)
+              BSchema.constructed(
+                "regInfo",
+                { tagNumber: 16, optional: true },
+                [
+                  // suspensionSecretCode Attribute
+                  BSchema.constructed(
+                    "suspensionSecretCode",
+                    { tagNumber: 16 },
+                    [
+                      BSchema.primitive("type", { tagNumber: 6 }, encodeOID),
+                      // SuspensionSecretCode
+                      BSchema.constructed("value", { tagNumber: 16 }, [
+                        BSchema.constructed(
+                          "hashAlg",
+                          { tagNumber: 16, optional: true },
+                          [
+                            BSchema.primitive(
+                              "algorithm",
+                              { tagNumber: 6 },
+                              encodeOID,
+                            ),
+                            BSchema.primitive(
+                              "parameters",
+                              { tagNumber: 5, optional: true },
+                              encodeNull,
+                            ),
+                          ],
+                        ),
+                        BSchema.primitive(
+                          "hashedSecretCode",
+                          { tagNumber: 4 },
+                          (hex: string) => u8ToArrayBuffer(hexToBytes(hex)),
+                        ),
+                      ]),
+                    ],
+                  ),
+                  // timeLimit Attribute
+                  BSchema.constructed("timeLimit", { tagNumber: 16 }, [
+                    BSchema.primitive("type", { tagNumber: 6 }, encodeOID),
+                    BSchema.primitive("value", { tagNumber: 4 }, encodeAscii),
+                  ]),
+                ],
+              ),
+            ]),
+          ),
+        ]),
       ],
-      { tagNumber: 16 },
     ),
-    BSchema.primitive("subjectPublicKey", undefined, { tagNumber: 3 }),
-  ],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 6 },
-);
-
-const RegisteredCorporationInfoExtension_BUILD = BSchema.constructed(
-  "registeredCorporationInfo",
-  [
-    BSchema.primitive("extnId", undefined, { tagNumber: 6 }),
-    BSchema.primitive("extnValue", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const Extensions_BUILD = BSchema.constructed(
-  "extensions",
-  [RegisteredCorporationInfoExtension_BUILD],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 9 },
-);
-
-const CertTemplate_BUILD = BSchema.constructed(
-  "certTemplate",
-  [
-    BSchema.constructed("subject", [Name_BUILD], {
-      tagClass: TagClass.ContextSpecific,
-      tagNumber: 5,
-    }),
-    SubjectPublicKeyInfo_BUILD,
-    Extensions_BUILD,
-  ],
-  { tagNumber: 16 },
-);
-
-const CertRequest_BUILD = BSchema.constructed(
-  "certReq",
-  [
-    BSchema.primitive("certReqId", undefined, { tagNumber: 2 }),
-    CertTemplate_BUILD,
-  ],
-  { tagNumber: 16 },
-);
-
-const POPOSigningKey_BUILD = BSchema.constructed(
-  "pop",
-  [
-    AlgorithmIdentifier_BUILD,
-    BSchema.primitive("signature", undefined, { tagNumber: 3 }),
-  ],
-  { tagClass: TagClass.ContextSpecific, tagNumber: 1 },
-);
-
-const SuspensionSecretCode_BUILD = BSchema.constructed(
-  "value",
-  [
-    AlgorithmIdentifier_BUILD,
-    BSchema.primitive("hashedSecretCode", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfoSuspension_BUILD = BSchema.constructed(
-  "suspensionSecretCode",
-  [
-    BSchema.primitive("type", undefined, { tagNumber: 6 }),
-    SuspensionSecretCode_BUILD,
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfoTimeLimit_BUILD = BSchema.constructed(
-  "timeLimit",
-  [
-    BSchema.primitive("type", undefined, { tagNumber: 6 }),
-    BSchema.primitive("value", undefined, { tagNumber: 4 }),
-  ],
-  { tagNumber: 16 },
-);
-
-const RegInfo_BUILD = BSchema.constructed(
-  "regInfo",
-  [RegInfoSuspension_BUILD, RegInfoTimeLimit_BUILD],
-  { tagNumber: 16 },
-);
-
-const CertReqMsg_BUILD = BSchema.constructed(
-  "certReqMsg",
-  [CertRequest_BUILD, POPOSigningKey_BUILD, RegInfo_BUILD],
-  { tagNumber: 16 },
-);
-
-const CertReqMessages_BUILD = BSchema.constructed(
-  "certReq",
-  [CertReqMsg_BUILD],
-  { tagNumber: 16 },
-);
-
-const Body_BUILD = BSchema.constructed("body", [CertReqMessages_BUILD], {
-  tagClass: TagClass.ContextSpecific,
-  tagNumber: 0,
-});
-
-const PKIMessage_BUILD = BSchema.constructed(
-  "PKIMessage",
-  [Header_BUILD, Body_BUILD],
-  { tagNumber: 16 },
-);
+  ]);
+}
 
 async function main() {
   const __filename = fileURLToPath(import.meta.url);
@@ -372,12 +503,16 @@ async function main() {
   const derBuf = await readFile(derPath);
   const der = bufferToArrayBuffer(derBuf);
 
+  // Build layered schemas; return only top-level
+  const parseTop = genParseSchema();
+  const buildTop = genBuildSchema();
+
   // 1) Parse to raw primitives (ArrayBuffer) by schema
-  const parser = new Parser(PKIMessage_RAW, { strict: true });
-  const raw = parser.parseSync(der);
+  const parser = new Parser(parseTop, { strict: true });
+  const raw = parser.parse(der);
 
   // 2) Build back using the mirror builder schema
-  const builder = new SchemaBuilder(PKIMessage_BUILD, { strict: true });
+  const builder = new SchemaBuilder(buildTop, { strict: true });
   const rebuilt = builder.build(raw as any);
 
   // 3) Verify identity and write rebuilt file

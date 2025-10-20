@@ -1,4 +1,4 @@
-import { BasicTLVParser } from "../src/parser";
+import { BasicTLVParser } from "../../src/parser";
 
 function arrayBufferToBase64url(buffer: ArrayBuffer): string {
   if (typeof Buffer !== "undefined") {

@@ -19,8 +19,8 @@
       "types": "./dist/builder/index.d.ts"
     },
     "./common": {
-      "import": "./dist/common/types.js",
-      "types": "./dist/common/types.d.ts"
+      "import": "./dist/common/index.js",
+      "types": "./dist/common/index.d.ts"
     }
   },
   "files": [
@@ -61,6 +61,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.29.5",
     "@eslint/js": "^9.24.0",
+    "@vitest/coverage-istanbul": "^3.2.4",
     "eslint": "^9.31.0",
     "eslint-config-prettier": "^10.1.1",
     "prettier": "^3.5.3",

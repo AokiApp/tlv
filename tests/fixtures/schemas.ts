@@ -1,5 +1,5 @@
-import { Schema, TagClass } from "../src/parser";
-import { decodeOffsets, decodePublicKey, decodeText } from "./utils";
+import { Schema, TagClass } from "../../src/parser";
+import { decodeOffsets, decodePublicKey, decodeText } from "../helpers/utils";
 
 export const schemaCertificate = Schema.constructed(
   "certificate",

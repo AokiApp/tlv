@@ -1,594 +1,317 @@
+import { inferIsSetFromTag, TagClass } from "../common/index";
 import { BasicTLVBuilder } from "./basic-builder.js";
-import { TagClass } from "../common/types.js";
 
 type DefaultEncodeType = ArrayBuffer;
+type SchemaOptions = {
+  readonly tagClass?: TagClass;
+  readonly tagNumber?: number;
+  readonly optional?: boolean;
+  readonly isSet?: boolean;
+};
+
+type OptionalFlag<O extends SchemaOptions | undefined> = {
+  readonly optional: O extends { optional: true } ? true : false;
+};
 
 /**
  * Base interface for a TLV schema object.
  */
-interface TLVSchemaBase {
-  readonly name: string;
-  readonly tagClass?: TagClass;
-  readonly tagNumber?: number;
+interface TLVSchemaBase<N extends string = string> {
+  readonly name: N;
+  readonly tagClass: TagClass;
+  readonly tagNumber: number;
+  /**
+   * When present, this field is optional in a constructed container.
+   */
+  readonly optional: boolean;
 }
 
 /**
  * Interface for defining a primitive TLV schema.
  * @template EncodedType - The type before encoding.
  */
-export interface PrimitiveTLVSchema<EncodedType = DefaultEncodeType>
-  extends TLVSchemaBase {
+interface PrimitiveTLVSchema<
+  N extends string = string,
+  EncodedType = DefaultEncodeType,
+> extends TLVSchemaBase<N> {
   /**
-   * Optional encode function which can return either a value or a Promise of a value.
+   * Optional encode function for synchronous encoding.
+   * Use a method signature to improve assignability across unions.
    */
-  readonly encode?: (data: EncodedType) => ArrayBuffer | Promise<ArrayBuffer>;
+  encode(data: EncodedType): ArrayBuffer;
 }
 
 /**
  * Interface for defining a constructed TLV schema.
  * @template F - The array of child field schemas.
  */
-export interface ConstructedTLVSchema<F extends readonly TLVSchema[]>
-  extends TLVSchemaBase {
+interface ConstructedTLVSchema<
+  N extends string = string,
+  F extends readonly TLVSchema[] = readonly TLVSchema[],
+> extends TLVSchemaBase<N> {
   readonly fields: F;
+  readonly isSet: boolean;
 }
 
-interface RepeatedTLVSchema extends TLVSchemaBase {
-  readonly item: TLVSchema;
-  readonly kind: "sequenceOf" | "setOf";
-  readonly optional?: boolean;
+// Describes a repeated TLV schema entry (e.g. SEQUENCE/SET OF).
+interface RepeatedTLVSchema<
+  N extends string = string,
+  Item extends TLVSchema = TLVSchema,
+> extends TLVSchemaBase<N> {
+  readonly item: Item;
 }
 
-type TLVSchema =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | PrimitiveTLVSchema<any>
-  | ConstructedTLVSchema<readonly TLVSchema[]>
-  | RepeatedTLVSchema;
+type TLVSchema<N extends string = string, E = unknown> =
+  | PrimitiveTLVSchema<N, E>
+  | ConstructedTLVSchema<N, readonly TLVSchema[]>
+  | RepeatedTLVSchema<N, TLVSchema>;
 
-export type BuildData<S extends TLVSchema> =
-  S extends ConstructedTLVSchema<infer F>
-    ? {
-        [Field in F[number] as Field["name"]]: BuildData<Field>;
-      }
-    : S extends PrimitiveTLVSchema<infer EncodedType>
-      ? EncodedType
-      : S extends RepeatedTLVSchema
-        ? Array<BuildData<S["item"]>>
-        : never;
+type BuildData<S extends TLVSchema> = S extends ConstructedTLVSchema
+  ? BuildDataFromConstructed<S>
+  : S extends RepeatedTLVSchema
+    ? BuildDataFromRepeated<S>
+    : S extends PrimitiveTLVSchema<string, unknown>
+      ? BuildDataFromPrimitive<S>
+      : never;
+
+type BuildDataFromConstructed<S> =
+  S extends ConstructedTLVSchema<string, infer Fields>
+    ? Fields extends readonly TLVSchema[]
+      ? {
+          // required fields
+          [K in Fields[number] as K["optional"] extends true
+            ? never
+            : K["name"]]: BuildData<K>;
+        } & {
+          // optional fields
+          [K in Fields[number] as K["optional"] extends true
+            ? K["name"]
+            : never]?: BuildData<K>;
+        }
+      : never
+    : never;
+
+// Recursively builds an array of items according to the item schema.
+
+type BuildDataFromRepeated<S> =
+  S extends RepeatedTLVSchema<string, infer Item> ? BuildData<Item>[] : never;
+
+type BuildDataFromPrimitive<S> =
+  S extends PrimitiveTLVSchema<string, infer E> ? E : never;
 
 /**
- * Checks if a given schema is a constructed schema.
- * @param schema - A TLV schema object.
- * @returns True if the schema has fields; false otherwise.
- */
-function isConstructedSchema<F extends readonly TLVSchema[]>(
-  schema: TLVSchema,
-): schema is ConstructedTLVSchema<F> {
-  return (
-    "fields" in schema &&
-    Array.isArray((schema as ConstructedTLVSchema<F>).fields)
-  );
-}
-
-function isRepeatedSchema(schema: TLVSchema): schema is RepeatedTLVSchema {
-  return (
-    (schema as RepeatedTLVSchema).kind === "sequenceOf" ||
-    (schema as RepeatedTLVSchema).kind === "setOf"
-  );
-}
-
-function isPrimitiveSchema(
-  schema: TLVSchema,
-): schema is PrimitiveTLVSchema<unknown> {
-  return !isConstructedSchema(schema) && !isRepeatedSchema(schema);
-}
-
-// Module-level helpers for DER ordering and lexicographic comparison
-function encodeTag(field: TLVSchema): Uint8Array {
-  const tagClass = field.tagClass ?? TagClass.Universal;
-  const tagNumber = field.tagNumber ?? 0;
-  const constructed =
-    isConstructedSchema(field) || isRepeatedSchema(field) ? 0x20 : 0x00;
-  const bytes: number[] = [];
-  let firstByte = (tagClass << 6) | constructed;
-  if (tagNumber < 31) {
-    firstByte |= tagNumber;
-    bytes.push(firstByte);
-  } else {
-    firstByte |= 0x1f;
-    bytes.push(firstByte);
-    let num = tagNumber;
-    const tagNumBytes: number[] = [];
-    do {
-      tagNumBytes.unshift(num % 128);
-      num = Math.floor(num / 128);
-    } while (num > 0);
-    for (let i = 0; i < tagNumBytes.length - 1; i++) {
-      bytes.push(tagNumBytes[i] | 0x80);
-    }
-    bytes.push(tagNumBytes[tagNumBytes.length - 1]);
-  }
-  return new Uint8Array(bytes);
-}
-
-/**
- * Compare two Uint8Arrays lexicographically.
- * Returns -1 if a < b, 1 if a > b, 0 if equal.
- */
-function lexCompare(a: Uint8Array, b: Uint8Array): number {
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-  }
-  if (a.length !== b.length) return a.length < b.length ? -1 : 1;
-  return 0;
-}
-
-/**
- * A builder that builds TLV data based on a given schema (synchronous or asynchronous).
- * @template S - The schema type.
+ * A TLV builder that encodes data according to a provided schema.
+ * Strict mode enforces presence of all required fields and type expectations.
  */
 export class SchemaBuilder<S extends TLVSchema> {
-  schema: S;
-  strict: boolean;
+  public readonly schema: S;
+  public readonly strict: boolean;
 
-  /**
-   * Constructs a SchemaBuilder for the specified schema.
-   * @param schema - The TLV schema to use.
-   */
-  constructor(schema: S, options?: { strict?: boolean }) {
+  public constructor(schema: S, options?: { strict?: boolean }) {
     this.schema = schema;
     this.strict = options?.strict ?? true;
   }
 
-  /**
-   * Overloaded method: synchronous version.
-   * @param data - The input data matching the schema structure.
-   * @returns Built TLV result.
-   */
-  public build(data: BuildData<S>): ArrayBuffer;
+  // Encodes the supplied data into TLV using the schema rules.
+  public build(data: BuildData<S>): ArrayBuffer {
+    return this.encodeTopLevel(this.schema, data);
+  }
 
-  /**
-   * Overloaded method: asynchronous version.
-   * @param data - The input data matching the schema structure.
-   * @param options - Enable async building.
-   * @returns A Promise of built ArrayBuffer.
-   */
-  public build(
-    data: BuildData<S>,
-    options: { async: true },
-  ): Promise<ArrayBuffer>;
-
-  /**
-   * Builds data either in synchronous or asynchronous mode.
-   * @param data - The input data matching the schema structure.
-   * @param options - If { async: true }, builds asynchronously; otherwise synchronously.
-   * @returns Either a built ArrayBuffer or a Promise of a built ArrayBuffer.
-   */
-  public build(
-    data: BuildData<S>,
-    options?: { async?: boolean; strict?: boolean },
-  ): ArrayBuffer | Promise<ArrayBuffer> {
-    const prevStrict = this.strict;
-    if (options?.strict !== undefined) {
-      this.strict = options.strict;
+  private encodeTopLevel(schema: TLVSchema, data: unknown): ArrayBuffer {
+    if (this.isConstructed(schema)) {
+      return this.encodeConstructed(
+        schema,
+        (data ?? {}) as Record<string, unknown>,
+      );
     }
-    try {
-      if (options?.async) {
-        return this.buildAsync(data);
-      } else {
-        return this.buildSync(data);
-      }
-    } finally {
-      this.strict = prevStrict;
+    if (this.isRepeated(schema)) {
+      // Top-level repeated has no tag to wrap items; disallow to keep TLV well-formed.
+      throw new Error(
+        `Top-level repeated schema '${schema.name}' is not supported. Wrap it in a constructed container.`,
+      );
     }
+    return this.encodePrimitive(schema, data);
   }
 
-  /**
-   * Builds data in synchronous mode.
-   * @param data - The input data.
-   * @returns Built TLV result.
-   */
-  public buildSync(data: BuildData<S>): ArrayBuffer {
-    return this.buildWithSchemaSync(this.schema, data);
-  }
-
-  /**
-   * Builds data in asynchronous mode.
-   * @param data - The input data.
-   * @returns A Promise of built TLV result.
-   */
-  public async buildAsync(data: BuildData<S>): Promise<ArrayBuffer> {
-    return await this.buildWithSchemaAsync(this.schema, data);
-  }
-
-  /**
-   * Recursively builds data in synchronous mode.
-   * @param schema - The schema to build with.
-   * @param data - The data to build.
-   * @returns Built result.
-   */
-  private buildWithSchemaSync<T extends TLVSchema>(
-    schema: T,
-    data: BuildData<T>,
+  private encodePrimitive(
+    schema: PrimitiveTLVSchema<string, unknown>,
+    data: unknown,
   ): ArrayBuffer {
-    if (isRepeatedSchema(schema)) {
-      const items = (data as Array<BuildData<typeof schema.item>>) ?? [];
-      let childBuffers = items.map((itemData) =>
-        this.buildWithSchemaSync(schema.item, itemData),
-      );
+    const { tagNumber, tagClass } = schema;
 
-      if (schema.kind === "setOf" && this.strict) {
-        childBuffers = childBuffers.slice().sort((a, b) => {
-          const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
-          const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          const len = Math.min(ua.length, ub.length);
-          for (let i = 0; i < len; i++) {
-            if (ua[i] !== ub[i]) return ua[i] < ub[i] ? -1 : 1;
-          }
-          if (ua.length !== ub.length) return ua.length < ub.length ? -1 : 1;
-          return 0;
-        });
-      }
-
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
-      );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        const bufView =
-          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-        childrenData.set(bufView, offset);
-        offset += bufView.byteLength;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
-    }
-
-    if (isConstructedSchema(schema)) {
-      let fieldsToProcess = [...schema.fields];
-
-      // For SET, sort fields by tag as required by DER strict mode
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          return lexCompare(encodeTag(a), encodeTag(b));
-        });
-      }
-
-      const childrenBuffers = fieldsToProcess.map((fieldSchema) => {
-        const fieldName = fieldSchema.name;
-        const fieldData = (data as Record<string, unknown>)[fieldName];
-
-        if (fieldData === undefined) {
-          throw new Error(`Missing required field: ${fieldName}`);
-        }
-
-        return this.buildWithSchemaSync(
-          fieldSchema,
-          fieldData as BuildData<typeof fieldSchema>,
-        );
-      });
-
-      // Avoid unnecessary ArrayBuffer copies
-      const totalLength = childrenBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
-      );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childrenBuffers) {
-        const bufView =
-          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-        childrenData.set(bufView, offset);
-        offset += bufView.byteLength;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? 16, // Default to SEQUENCE for constructed
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
-    } else {
-      // PrimitiveTLVSchema
-      let value: ArrayBuffer;
-      if (schema.encode) {
-        const encoded = schema.encode(data);
-        if (encoded instanceof Promise) {
-          throw new Error(
-            `Asynchronous encoder used in synchronous build for field: ${schema.name}`,
-          );
-        }
-        value = encoded;
-      } else {
-        if (!((data as unknown) instanceof ArrayBuffer)) {
-          throw new Error(
-            `Field '${schema.name}' requires an ArrayBuffer, but received other type.`,
-          );
-        }
-        value = data as ArrayBuffer;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? 0,
-          constructed: false,
-        },
-        length: value.byteLength,
-        value: value,
-        endOffset: 0,
-      });
-    }
-  }
-
-  /**
-   * Recursively builds data in asynchronous mode.
-   * @param schema - The schema to build with.
-   * @param data - The data to build.
-   * @returns A Promise of the built result.
-   */
-  private async buildWithSchemaAsync<T extends TLVSchema>(
-    schema: T,
-    data: BuildData<T>,
-  ): Promise<ArrayBuffer> {
-    if (isRepeatedSchema(schema)) {
-      const items = (data as Array<BuildData<typeof schema.item>>) ?? [];
-      let childBuffers = await Promise.all(
-        items.map((itemData) =>
-          this.buildWithSchemaAsync(schema.item, itemData),
-        ),
-      );
-      if (schema.kind === "setOf" && this.strict) {
-        childBuffers = childBuffers.slice().sort((a, b) => {
-          const ua = a instanceof Uint8Array ? a : new Uint8Array(a);
-          const ub = b instanceof Uint8Array ? b : new Uint8Array(b);
-          return lexCompare(ua, ub);
-        });
-      }
-
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
-      );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        childrenData.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? (schema.kind === "setOf" ? 17 : 16),
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
-    }
-
-    if (isConstructedSchema(schema)) {
-      let fieldsToProcess = [...schema.fields];
-
-      // For SET, sort fields by tag as required by DER strict mode
-      if (
-        schema.tagNumber === 17 &&
-        (schema.tagClass === TagClass.Universal ||
-          schema.tagClass === undefined) &&
-        this.strict
-      ) {
-        fieldsToProcess = fieldsToProcess.slice().sort((a, b) => {
-          return lexCompare(encodeTag(a), encodeTag(b));
-        });
-      }
-
-      const childBuffers = await Promise.all(
-        fieldsToProcess.map((fieldSchema) => {
-          const fieldName = fieldSchema.name;
-          const fieldData = (data as Record<string, unknown>)[fieldName];
-
-          if (fieldData === undefined) {
-            throw new Error(`Missing required field: ${fieldName}`);
-          }
-          return this.buildWithSchemaAsync(
-            fieldSchema,
-            fieldData as BuildData<typeof fieldSchema>,
-          );
-        }),
-      );
-
-      const totalLength = childBuffers.reduce(
-        (sum, buf) => sum + buf.byteLength,
-        0,
-      );
-      const childrenData = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const buffer of childBuffers) {
-        childrenData.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
-      }
-
-      return BasicTLVBuilder.build({
-        tag: {
-          tagClass: schema.tagClass ?? TagClass.Universal,
-          tagNumber: schema.tagNumber ?? 16, // Default to SEQUENCE for constructed
-          constructed: true,
-        },
-        length: childrenData.byteLength,
-        value: childrenData.buffer,
-        endOffset: 0,
-      });
-    }
-
-    // PrimitiveTLVSchema
-    if (!isPrimitiveSchema(schema)) {
-      throw new Error("Unsupported schema kind for buildAsync");
-    }
-
-    let value: ArrayBuffer;
-    if (schema.encode) {
-      value = await Promise.resolve(schema.encode(data));
-    } else {
-      if (!((data as unknown) instanceof ArrayBuffer)) {
-        throw new Error(
-          `Field '${schema.name}' requires an ArrayBuffer, but received other type.`,
-        );
-      }
-      value = data as ArrayBuffer;
-    }
+    const value = schema.encode(data);
 
     return BasicTLVBuilder.build({
-      tag: {
-        tagClass: schema.tagClass ?? TagClass.Universal,
-        tagNumber: schema.tagNumber ?? 0,
-        constructed: false,
-      },
+      tag: { tagClass, constructed: false, tagNumber },
       length: value.byteLength,
-      value: value,
+      value,
       endOffset: 0,
     });
+  }
+
+  private encodeConstructed(
+    schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
+    data: Record<string, unknown>,
+  ): ArrayBuffer {
+    const { tagNumber, tagClass } = schema;
+
+    const childBuffers: ArrayBuffer[] = [];
+
+    for (const field of schema.fields) {
+      const fieldName = field.name;
+      const v = data[fieldName];
+
+      // Missing property handling
+      if (v === undefined) {
+        if (field.optional) {
+          continue;
+        }
+        throw new Error(
+          `Missing required property '${fieldName}' in constructed '${schema.name}'`,
+        );
+      }
+
+      if (this.isRepeated(field)) {
+        if (!Array.isArray(v)) {
+          throw new Error(`Repeated field '${fieldName}' expects an array`);
+        }
+        const items = v as unknown[];
+        for (const item of items) {
+          const itemTLV = this.encodeTopLevel(field.item, item);
+          childBuffers.push(itemTLV);
+        }
+        continue;
+      }
+
+      if (this.isConstructed(field)) {
+        const childTLV = this.encodeConstructed(
+          field,
+          v as Record<string, unknown>,
+        );
+        childBuffers.push(childTLV);
+        continue;
+      }
+
+      // Primitive child
+      const primTLV = this.encodePrimitive(field, v);
+      childBuffers.push(primTLV);
+    }
+
+    // For SET, enforce DER canonical ordering when strict=true; preserve input order when strict=false
+    if (schema.isSet === true && this.strict === true) {
+      childBuffers.sort((a, b) => this.compareUnsignedLex(a, b));
+    }
+
+    const inner = this.concatBuffers(childBuffers);
+    return BasicTLVBuilder.build({
+      tag: { tagClass, constructed: true, tagNumber },
+      length: inner.byteLength,
+      value: inner,
+      endOffset: 0,
+    });
+  }
+  private isConstructed(
+    schema: TLVSchema,
+  ): schema is ConstructedTLVSchema<string, readonly TLVSchema[]> {
+    return Object.prototype.hasOwnProperty.call(schema, "fields");
+  }
+
+  private isRepeated(
+    schema: TLVSchema,
+  ): schema is RepeatedTLVSchema<string, TLVSchema> {
+    return Object.prototype.hasOwnProperty.call(schema, "item");
+  }
+
+  private concatBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
+    const total = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const b of buffers) {
+      out.set(new Uint8Array(b), off);
+      off += b.byteLength;
+    }
+    return out.buffer;
+  }
+
+  // Unsigned lexicographic comparator for raw DER bytes (a < b => negative, a > b => positive)
+  private compareUnsignedLex(a: ArrayBuffer, b: ArrayBuffer): number {
+    const ua = new Uint8Array(a);
+    const ub = new Uint8Array(b);
+    const len = Math.min(ua.length, ub.length);
+    for (let i = 0; i < len; i++) {
+      if (ua[i] !== ub[i]) return ua[i] - ub[i];
+    }
+    return ua.length - ub.length;
   }
 }
 
 /**
  * Utility class for creating new TLV schemas (identical to parser schemas).
  */
+// Convenience factory for constructing schema descriptors used by the builder.
 export class Schema {
-  /**
-   * Creates a primitive TLV schema definition.
-   * @param name - The name of the field.
-   * @param encode - Optional encode function.
-   * @param options - Optional tag class and tag number.
-   * @returns A primitive TLV schema object.
-   */
-  // オーバーロード: encode あり（Eを推論）
-  public static primitive<N extends string, E>(
+  static primitive<N extends string, O extends SchemaOptions, EncodedType>(
     name: N,
-    encode: (data: E) => ArrayBuffer | Promise<ArrayBuffer>,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): PrimitiveTLVSchema<E> & { name: N };
-
-  // オーバーロード: encode なし（E=ArrayBuffer）
-  public static primitive<N extends string>(
-    name: N,
-    encode?: (data: ArrayBuffer) => ArrayBuffer | Promise<ArrayBuffer>,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): PrimitiveTLVSchema<ArrayBuffer> & { name: N };
-
-  // 実装
-  public static primitive<N extends string, E>(
-    name: N,
-    encode?: (data: E) => ArrayBuffer | Promise<ArrayBuffer>,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): PrimitiveTLVSchema<E> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
-    return {
+    options: O,
+    encode: (data: EncodedType) => ArrayBuffer,
+  ): PrimitiveTLVSchema<N, EncodedType> & OptionalFlag<O> {
+    const tagNumber = options.tagNumber;
+    if (typeof tagNumber !== "number") {
+      throw new Error(`Primitive schema '${name}' requires tagNumber`);
+    }
+    const obj = {
       name,
       encode,
-      tagClass,
+      tagClass: options?.tagClass ?? TagClass.Universal,
       tagNumber,
+      optional: options?.optional ? (true as const) : (false as const),
     };
+    return obj as PrimitiveTLVSchema<N, EncodedType> & OptionalFlag<O>;
   }
 
-  /**
-   * Creates a constructed TLV schema definition.
-   * @param name - The name of the field.
-   * @param fields - An array of TLV schema definitions.
-   * @param options - Optional tag class and tag number.
-   * @returns A constructed TLV schema object.
-   */
-  public static constructed<N extends string, F extends readonly TLVSchema[]>(
+  static constructed<
+    N extends string,
+    O extends SchemaOptions,
+    Fields extends readonly TLVSchema[],
+  >(
     name: N,
-    fields: F,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-    },
-  ): ConstructedTLVSchema<F> & { name: N } {
-    const { tagClass, tagNumber } = options ?? {};
-    return {
+    options: O,
+    fields: Fields,
+  ): ConstructedTLVSchema<N, Fields> & OptionalFlag<O> {
+    const tagClassNormalized = options?.tagClass ?? TagClass.Universal;
+    const inferredIsSet =
+      options?.isSet !== undefined
+        ? options.isSet
+        : inferIsSetFromTag(tagClassNormalized, options?.tagNumber);
+    const inferredTagNumber = inferredIsSet ? 17 : 16;
+
+    const obj = {
       name,
       fields,
-      tagClass,
-      tagNumber,
+      tagClass: tagClassNormalized,
+      tagNumber: options?.tagNumber ?? inferredTagNumber,
+      optional: options?.optional ? (true as const) : (false as const),
+      isSet: inferredIsSet,
     };
+    return obj as ConstructedTLVSchema<N, Fields> & OptionalFlag<O>;
   }
 
-  /**
-   * Creates a SEQUENCE OF schema definition.
-   */
-  public static sequenceOf<N extends string>(
+  static repeated<
+    N extends string,
+    O extends SchemaOptions,
+    Item extends TLVSchema,
+  >(
     name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
+    options: O,
+    item: Item,
+  ): RepeatedTLVSchema<N, Item> & OptionalFlag<O> {
+    const obj = {
       name,
       item,
-      kind: "sequenceOf",
-      tagClass,
-      tagNumber,
-      optional,
+      tagClass: options?.tagClass ?? TagClass.Universal,
+      tagNumber: options?.tagNumber,
+      optional: options?.optional ? (true as const) : (false as const),
     };
-  }
-
-  /**
-   * Creates a SET OF schema definition.
-   */
-  public static setOf<N extends string>(
-    name: N,
-    item: TLVSchema,
-    options?: {
-      tagClass?: TagClass;
-      tagNumber?: number;
-      optional?: boolean;
-    },
-  ): RepeatedTLVSchema & { name: N } {
-    const { tagClass, tagNumber, optional } = options ?? {};
-    return {
-      name,
-      item,
-      kind: "setOf",
-      tagClass,
-      tagNumber,
-      optional,
-    };
+    return obj as RepeatedTLVSchema<N, Item> & OptionalFlag<O>;
   }
 }
