@@ -1,0 +1,40 @@
+# Source files (already compiled in dist/)
+src/
+tests/
+examples/
+
+# Build and dev files
+tsconfig.json
+vitest.config.js
+eslint.config.mjs
+.prettierrc
+
+# CI/CD
+.github/
+
+# Changesets
+.changeset/
+
+# Git
+.git/
+.gitignore
+
+# Coverage
+coverage/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp

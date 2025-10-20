@@ -1,6 +1,12 @@
 # @aokiapp/tlv
 
+[![npm version](https://img.shields.io/npm/v/@aokiapp/tlv.svg)](https://www.npmjs.com/package/@aokiapp/tlv)
+[![License](https://img.shields.io/badge/license-ANAL--Tight-blue.svg)](LICENSE.md)
+[![Node.js Version](https://img.shields.io/node/v/@aokiapp/tlv)](package.json)
+
 Tag-Length-Value (TLV) parser and builder library with schema support. Provides both parsing and building APIs as submodules.
+
+> **Status**: This library is production-ready and follows [semantic versioning](https://semver.org/). The API is stable starting from version 1.0.0.
 
 ## Features
 
@@ -338,7 +344,6 @@ interface SchemaOptions {
 ```typescript
 // Text encoding
 function encodeUtf8(str: string): ArrayBuffer;
-function encodeAscii(str: string): ArrayBuffer;
 
 // Number encoding
 function encodeInteger(n: number): ArrayBuffer; // DER INTEGER encoding
@@ -576,6 +581,23 @@ This project is licensed under the AokiApp Normative Application License - Tight
 ## Contributing
 
 This project is currently under restrictive licensing. For contribution guidelines or commercial licensing inquiries, please contact AokiApp Inc. at hello+github@aoki.app.
+
+## Versioning and Breaking Changes
+
+This project follows [Semantic Versioning](https://semver.org/) starting from version 1.0.0:
+
+- **Major versions** (e.g., 1.x → 2.x): May include breaking API changes
+- **Minor versions** (e.g., 1.0.x → 1.1.x): New features, backward compatible
+- **Patch versions** (e.g., 1.0.0 → 1.0.1): Bug fixes, backward compatible
+
+### API Stability Commitment
+
+Starting from 1.0.0, we commit to:
+
+1. **No breaking changes in minor/patch releases**: Existing code will continue to work
+2. **Deprecation before removal**: Features will be deprecated for at least one major version before removal
+3. **Clear migration guides**: Major version updates will include comprehensive migration documentation
+4. **Security fixes priority**: Security updates may be backported to older major versions
 
 ## Changelog
 

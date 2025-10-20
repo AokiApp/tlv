@@ -1,4 +1,4 @@
-import { TagClass } from "./types";
+import { TagClass } from "./types.js";
 export * from "./codecs.js";
 export * from "./types.js";
 
