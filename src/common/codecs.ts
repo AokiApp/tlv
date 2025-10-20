@@ -82,7 +82,8 @@ export function encodeOID(oid: string): ArrayBuffer {
     if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid OID arc: ${s}`);
     return Math.floor(n);
   });
-  if (arcs.length < 2) throw new Error(`OID must have at least two arcs; got '${oid}'`);
+  if (arcs.length < 2)
+    throw new Error(`OID must have at least two arcs; got '${oid}'`);
   const first = arcs[0];
   const second = arcs[1];
   let firstByte = 0;
@@ -114,7 +115,8 @@ export function decodeOID(buffer: ArrayBuffer): string {
     let val = 0;
     let b: number;
     do {
-      if (i >= bytes.length) throw new Error(`Truncated OID at byte index ${i}`);
+      if (i >= bytes.length)
+        throw new Error(`Truncated OID at byte index ${i}`);
       b = bytes[i++];
       val = (val << 7) | (b & 0x7f);
     } while (b & 0x80);

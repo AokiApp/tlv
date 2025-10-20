@@ -1,7 +1,11 @@
 // tests/unit/schema/builder.core.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { Schema as BSchema, SchemaBuilder, BasicTLVBuilder } from "../../../src/builder";
+import {
+  Schema as BSchema,
+  SchemaBuilder,
+  BasicTLVBuilder,
+} from "../../../src/builder";
 import { TagClass } from "../../../src/common/types";
 import { toHex } from "../../../src/common/codecs";
 
@@ -28,8 +32,16 @@ describe("Builder core: primitive and constructed encoding", () => {
       "person",
       { tagClass: TagClass.Private, tagNumber: 0x20 },
       [
-        BSchema.primitive("id", { tagClass: TagClass.Private, tagNumber: 0x10 }, (n: number) => new Uint8Array([n]).buffer),
-        BSchema.primitive("name", { tagClass: TagClass.Private, tagNumber: 0x11 }, (s: string) => new TextEncoder().encode(s).buffer),
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Private, tagNumber: 0x10 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
+        BSchema.primitive(
+          "name",
+          { tagClass: TagClass.Private, tagNumber: 0x11 },
+          (s: string) => new TextEncoder().encode(s).buffer,
+        ),
       ],
     );
     const builder = new SchemaBuilder(personSchema);
@@ -44,8 +56,16 @@ describe("Builder core: primitive and constructed encoding", () => {
       "rec",
       { tagClass: TagClass.Application, tagNumber: 0x10 },
       [
-        BSchema.primitive("id", { tagClass: TagClass.Application, tagNumber: 0x11 }, (n: number) => new Uint8Array([n]).buffer),
-        BSchema.primitive("name", { tagClass: TagClass.Application, tagNumber: 0x12 }, (s: string) => new TextEncoder().encode(s).buffer),
+        BSchema.primitive(
+          "id",
+          { tagClass: TagClass.Application, tagNumber: 0x11 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
+        BSchema.primitive(
+          "name",
+          { tagClass: TagClass.Application, tagNumber: 0x12 },
+          (s: string) => new TextEncoder().encode(s).buffer,
+        ),
       ],
     );
     const builder = new SchemaBuilder(recSchema, { strict: true });
@@ -53,7 +73,11 @@ describe("Builder core: primitive and constructed encoding", () => {
   });
 
   it("primitive without encode: wrong data type fails", () => {
-    const rawSchema = BSchema.primitive("raw", { tagNumber: 0x01 }, undefined as any);
+    const rawSchema = BSchema.primitive(
+      "raw",
+      { tagNumber: 0x01 },
+      undefined as any,
+    );
     const builder = new SchemaBuilder(rawSchema);
     assert.throws(() => builder.build(123 as any));
   });
@@ -66,8 +90,16 @@ describe("Builder SET ordering (strict gating)", () => {
       { tagNumber: 17 }, // UNIVERSAL SET (inferred isSet=true)
       [
         // Intentionally place 'name' (UTF8String, 0x0C) before 'id' (INTEGER, 0x02)
-        BSchema.primitive("name", { tagNumber: 0x0c }, (s: string) => new TextEncoder().encode(s).buffer),
-        BSchema.primitive("id", { tagNumber: 0x02 }, (n: number) => new Uint8Array([n]).buffer),
+        BSchema.primitive(
+          "name",
+          { tagNumber: 0x0c },
+          (s: string) => new TextEncoder().encode(s).buffer,
+        ),
+        BSchema.primitive(
+          "id",
+          { tagNumber: 0x02 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
       ],
     );
     const builder = new SchemaBuilder(setSchema, { strict: false });
@@ -82,8 +114,16 @@ describe("Builder SET ordering (strict gating)", () => {
       { tagNumber: 17 }, // UNIVERSAL SET (inferred isSet=true)
       [
         // Same schema field order as above (name before id)
-        BSchema.primitive("name", { tagNumber: 0x0c }, (s: string) => new TextEncoder().encode(s).buffer),
-        BSchema.primitive("id", { tagNumber: 0x02 }, (n: number) => new Uint8Array([n]).buffer),
+        BSchema.primitive(
+          "name",
+          { tagNumber: 0x0c },
+          (s: string) => new TextEncoder().encode(s).buffer,
+        ),
+        BSchema.primitive(
+          "id",
+          { tagNumber: 0x02 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
       ],
     );
     const builder = new SchemaBuilder(setSchema, { strict: true });
@@ -95,7 +135,10 @@ describe("Builder SET ordering (strict gating)", () => {
 
 describe("Builder raw encode paths (no encoder provided)", () => {
   it("accepts ArrayBuffer when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", { tagClass: TagClass.Universal, tagNumber: 5 });
+    const rawSchema = BSchema.primitive("raw", {
+      tagClass: TagClass.Universal,
+      tagNumber: 5,
+    });
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([0xaa, 0xbb]).buffer;
     const built = builder.build(data);
@@ -104,7 +147,10 @@ describe("Builder raw encode paths (no encoder provided)", () => {
   });
 
   it("accepts Uint8Array and copies bytes when no encoder is provided", () => {
-    const rawSchema = BSchema.primitive("raw", { tagClass: TagClass.Universal, tagNumber: 6 });
+    const rawSchema = BSchema.primitive("raw", {
+      tagClass: TagClass.Universal,
+      tagNumber: 6,
+    });
     const builder = new SchemaBuilder(rawSchema);
     const data = new Uint8Array([1, 2, 3]);
     const built = builder.build(data.buffer);
@@ -122,7 +168,13 @@ describe("Builder nested constructed and errors", () => {
         BSchema.constructed(
           "inner",
           { tagClass: TagClass.Private, tagNumber: 0x10 },
-          [BSchema.primitive("x", { tagClass: TagClass.Private, tagNumber: 0x11 }, (n: number) => new Uint8Array([n]).buffer)],
+          [
+            BSchema.primitive(
+              "x",
+              { tagClass: TagClass.Private, tagNumber: 0x11 },
+              (n: number) => new Uint8Array([n]).buffer,
+            ),
+          ],
         ),
       ],
     );
@@ -136,18 +188,28 @@ describe("Builder nested constructed and errors", () => {
     const rep = BSchema.repeated(
       "items",
       {},
-      BSchema.primitive("n", { tagClass: TagClass.Application, tagNumber: 0x42 }, (n: number) => new Uint8Array([n]).buffer),
+      BSchema.primitive(
+        "n",
+        { tagClass: TagClass.Application, tagNumber: 0x42 },
+        (n: number) => new Uint8Array([n]).buffer,
+      ),
     );
     const builder = new SchemaBuilder(rep as any);
     assert.throws(() => builder.build([1, 2, 3] as any));
   });
 
   it("repeated field expects an array (throws otherwise)", () => {
-    const sch = BSchema.constructed(
-      "seqRep",
-      { tagNumber: 16 },
-      [BSchema.repeated("items", {}, BSchema.primitive("n", { tagNumber: 0x02 }, (n: number) => new Uint8Array([n]).buffer))],
-    );
+    const sch = BSchema.constructed("seqRep", { tagNumber: 16 }, [
+      BSchema.repeated(
+        "items",
+        {},
+        BSchema.primitive(
+          "n",
+          { tagNumber: 0x02 },
+          (n: number) => new Uint8Array([n]).buffer,
+        ),
+      ),
+    ]);
     const builder = new SchemaBuilder(sch);
     assert.throws(() => builder.build({ items: 123 } as any));
   });
@@ -158,15 +220,25 @@ describe("Builder nested constructed and errors", () => {
 
   it("BSchema.inferIsSetFromTag mirrors UNIVERSAL semantics", () => {
     assert.strictEqual(BSchema.inferIsSetFromTag(TagClass.Universal, 17), true);
-    assert.strictEqual(BSchema.inferIsSetFromTag(TagClass.Universal, 16), false);
-    assert.strictEqual(BSchema.inferIsSetFromTag(TagClass.Private, 17), undefined);
+    assert.strictEqual(
+      BSchema.inferIsSetFromTag(TagClass.Universal, 16),
+      false,
+    );
+    assert.strictEqual(
+      BSchema.inferIsSetFromTag(TagClass.Private, 17),
+      undefined,
+    );
   });
 });
 
 describe("BasicTLVBuilder: constraints echoed via builder outputs", () => {
   it("throws when building invalid TLV with bad tagNumber through BasicTLVBuilder", () => {
     const badTLV = {
-      tag: { tagClass: TagClass.Universal, constructed: false, tagNumber: -1 as any },
+      tag: {
+        tagClass: TagClass.Universal,
+        constructed: false,
+        tagNumber: -1 as any,
+      },
       length: 0,
       value: new ArrayBuffer(0),
       endOffset: 0,

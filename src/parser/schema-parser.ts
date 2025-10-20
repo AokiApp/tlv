@@ -625,4 +625,11 @@ export class Schema {
     };
     return obj as RepeatedTLVSchema<N, Item> & OptionalFlag<O>;
   }
+
+  static inferIsSetFromTag(
+    tagClass?: TagClass,
+    tagNumber?: number,
+  ): boolean | undefined {
+    return inferIsSetFromTag(tagClass, tagNumber);
+  }
 }
