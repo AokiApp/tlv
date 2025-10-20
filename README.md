@@ -25,7 +25,8 @@ npm install @aokiapp/tlv
 import { BasicTLVParser } from "@aokiapp/tlv/parser";
 
 // Parse raw TLV data
-const buffer = new Uint8Array([0x04, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f]).buffer;
+const buffer = new Uint8Array([0x04, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f])
+  .buffer;
 const tlv = BasicTLVParser.parse(buffer);
 
 console.log(tlv);
@@ -74,7 +75,7 @@ const PersonSchema = Schema.constructed("person", { tagNumber: 16 }, [
 const builder = new SchemaBuilder(PersonSchema);
 const tlvBuffer = builder.build({
   id: 123,
-  name: "John Doe"
+  name: "John Doe",
 });
 ```
 
@@ -88,23 +89,28 @@ Low-level TLV parsing for raw DER/BER data.
 
 ```typescript
 class BasicTLVParser {
-  static parse(buffer: ArrayBuffer): TLVResult
+  static parse(buffer: ArrayBuffer): TLVResult;
 }
 ```
 
 **Parameters:**
+
 - `buffer: ArrayBuffer` - Raw TLV data to parse
 
 **Returns:**
+
 - [`TLVResult`](src/common/types.ts:15) - Parsed structure with tag, length, value, and endOffset
 
 **Throws:**
+
 - Error if indefinite length (0x80) is encountered (DER compliance)
 - Error if declared length exceeds available bytes
 
 **Example:**
+
 ```typescript
-const buffer = new Uint8Array([0x04, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f]).buffer;
+const buffer = new Uint8Array([0x04, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f])
+  .buffer;
 const result = BasicTLVParser.parse(buffer);
 // Returns: {
 //   tag: { tagClass: 0, constructed: false, tagNumber: 4 },
@@ -120,12 +126,13 @@ Schema-driven TLV parsing with full type inference.
 
 ```typescript
 class SchemaParser {
-  constructor(schema: TLVSchema, options?: { strict?: boolean })
-  parse(buffer: ArrayBuffer): any  // Fully typed based on schema
+  constructor(schema: TLVSchema, options?: { strict?: boolean });
+  parse(buffer: ArrayBuffer): any; // Fully typed based on schema
 }
 ```
 
 **Constructor Parameters:**
+
 - `schema: TLVSchema` - TLV schema definition
 - `options.strict?: boolean` - Enable strict validation (default: true)
 
@@ -136,12 +143,15 @@ class SchemaParser {
 Parse TLV data according to schema with full type inference.
 
 **Parameters:**
+
 - `buffer: ArrayBuffer` - DER-encoded TLV data
 
 **Returns:**
+
 - Fully typed result based on schema definition (TypeScript infers the exact type)
 
 **Behavior:**
+
 - **Strict mode (default)**: Enforces exact schema compliance, canonical SET ordering
 - **Non-strict mode**: More permissive parsing, preserves original SET order
 - **SEQUENCE**: Children must appear in exact schema order
@@ -149,6 +159,7 @@ Parse TLV data according to schema with full type inference.
 - **Repeated fields**: Automatically collect multiple consecutive matching children
 
 **Throws:**
+
 - Error on tag class/number mismatches
 - Error on missing required fields
 - Error on unknown children (immediate failure regardless of strict mode)
@@ -163,20 +174,20 @@ class Schema {
   static primitive(
     name: string,
     options: SchemaOptions,
-    decode?: (buffer: ArrayBuffer) => any
-  ): TLVSchema
-  
+    decode?: (buffer: ArrayBuffer) => any,
+  ): TLVSchema;
+
   static constructed(
     name: string,
     options: SchemaOptions,
-    fields: TLVSchema[]
-  ): TLVSchema
-  
+    fields: TLVSchema[],
+  ): TLVSchema;
+
   static repeated(
     name: string,
     options: SchemaOptions,
-    item: TLVSchema
-  ): TLVSchema
+    item: TLVSchema,
+  ): TLVSchema;
 }
 ```
 
@@ -188,34 +199,39 @@ Low-level TLV building for constructing DER-encoded data.
 
 ```typescript
 class BasicTLVBuilder {
-  static build(tlv: TLVResult): ArrayBuffer
+  static build(tlv: TLVResult): ArrayBuffer;
 }
 ```
 
 **Parameters:**
+
 - `tlv: TLVResult` - TLV structure to encode
 
 **Returns:**
+
 - `ArrayBuffer` - DER-encoded TLV data
 
 **Behavior:**
+
 - Supports high tag numbers (>= 31) with multi-byte encoding
 - Supports long-form length encoding (>= 128 bytes)
 - Enforces DER canonical encoding rules
 - Maximum length field: 126 bytes (BER/DER limit)
 
 **Throws:**
+
 - Error for invalid tag numbers (negative, non-finite)
 - Error for invalid tag classes (outside 0-3 range)
 - Error for values too large to encode (> 126-byte length field)
 
 **Example:**
+
 ```typescript
 const tlv: TLVResult = {
   tag: { tagClass: TagClass.Universal, constructed: false, tagNumber: 4 },
   length: 5,
   value: new TextEncoder().encode("Hello").buffer,
-  endOffset: 0
+  endOffset: 0,
 };
 const encoded = BasicTLVBuilder.build(tlv);
 ```
@@ -226,12 +242,13 @@ Schema-driven TLV building with type validation.
 
 ```typescript
 class SchemaBuilder {
-  constructor(schema: TLVSchema, options?: { strict?: boolean })
-  build(data: any): ArrayBuffer  // Input type inferred from schema
+  constructor(schema: TLVSchema, options?: { strict?: boolean });
+  build(data: any): ArrayBuffer; // Input type inferred from schema
 }
 ```
 
 **Constructor Parameters:**
+
 - `schema: TLVSchema` - TLV schema definition
 - `options.strict?: boolean` - Enable strict validation (default: true)
 
@@ -242,18 +259,22 @@ class SchemaBuilder {
 Build DER-encoded TLV data from structured input.
 
 **Parameters:**
+
 - `data: any` - Input data matching schema structure (TypeScript infers exact type)
 
 **Returns:**
+
 - `ArrayBuffer` - DER-encoded TLV data
 
 **Behavior:**
+
 - **Strict mode (default)**: Validates all required fields, sorts SET children canonically
 - **Non-strict mode**: Permits missing fields, preserves SET child order
 - **Type safety**: Input data type is inferred from schema definition
 - **SET ordering**: Applies DER canonical lexicographic sorting in strict mode
 
 **Throws:**
+
 - Error on missing required properties (strict mode)
 - Error on type validation failures
 - Error on top-level repeated schemas (must be wrapped in constructed container)
@@ -267,20 +288,20 @@ class Schema {
   static primitive(
     name: string,
     options: SchemaOptions,
-    encode?: (data: any) => ArrayBuffer
-  ): TLVSchema
-  
+    encode?: (data: any) => ArrayBuffer,
+  ): TLVSchema;
+
   static constructed(
     name: string,
     options: SchemaOptions,
-    fields: TLVSchema[]
-  ): TLVSchema
-  
+    fields: TLVSchema[],
+  ): TLVSchema;
+
   static repeated(
     name: string,
     options: SchemaOptions,
-    item: TLVSchema
-  ): TLVSchema
+    item: TLVSchema,
+  ): TLVSchema;
 }
 ```
 
@@ -290,24 +311,25 @@ All schema factory methods accept common options:
 
 ```typescript
 interface SchemaOptions {
-  readonly tagClass?: TagClass;     // Default: TagClass.Universal
-  readonly tagNumber?: number;      // Required for primitives
-  readonly optional?: boolean;      // Default: false
-  readonly isSet?: boolean;         // Auto-inferred for UNIVERSAL 16/17
+  readonly tagClass?: TagClass; // Default: TagClass.Universal
+  readonly tagNumber?: number; // Required for primitives
+  readonly optional?: boolean; // Default: false
+  readonly isSet?: boolean; // Auto-inferred for UNIVERSAL 16/17
 }
 ```
 
 **Tag Class Values:**
+
 - `TagClass.Universal` (0) - Standard ASN.1 types
-- `TagClass.Application` (1) - Application-specific types  
+- `TagClass.Application` (1) - Application-specific types
 - `TagClass.ContextSpecific` (2) - Context-specific types
 - `TagClass.Private` (3) - Private types
 
 **Tag Number Inference:**
-- **SEQUENCE**: `tagNumber: 16` (UNIVERSAL, constructed)
-- **SET**: `tagNumber: 17` (UNIVERSAL, constructed)  
-- **Custom tags**: Explicit `tagNumber` required
 
+- **SEQUENCE**: `tagNumber: 16` (UNIVERSAL, constructed)
+- **SET**: `tagNumber: 17` (UNIVERSAL, constructed)
+- **Custom tags**: Explicit `tagNumber` required
 
 ### Utility Functions
 
@@ -315,38 +337,44 @@ interface SchemaOptions {
 
 ```typescript
 // Text encoding
-function encodeUtf8(str: string): ArrayBuffer
-function encodeAscii(str: string): ArrayBuffer
+function encodeUtf8(str: string): ArrayBuffer;
+function encodeAscii(str: string): ArrayBuffer;
 
-// Number encoding  
-function encodeInteger(n: number): ArrayBuffer    // DER INTEGER encoding
-function encodeOID(oid: string): ArrayBuffer      // OBJECT IDENTIFIER encoding
+// Number encoding
+function encodeInteger(n: number): ArrayBuffer; // DER INTEGER encoding
+function encodeOID(oid: string): ArrayBuffer; // OBJECT IDENTIFIER encoding
 
 // Binary encoding
-function encodeBitString(bits: { unusedBits: number; data: Uint8Array }): ArrayBuffer
+function encodeBitString(bits: {
+  unusedBits: number;
+  data: Uint8Array;
+}): ArrayBuffer;
 
 // Buffer utilities
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer;
 ```
 
 #### Decoding Functions
 
 ```typescript
 // Text decoding
-function decodeUtf8(buffer: ArrayBuffer): string
-function decodeAscii(buffer: ArrayBuffer): string  
-function decodeShiftJis(buffer: ArrayBuffer): string
+function decodeUtf8(buffer: ArrayBuffer): string;
+function decodeAscii(buffer: ArrayBuffer): string;
+function decodeShiftJis(buffer: ArrayBuffer): string;
 
 // Number decoding
-function decodeInteger(buffer: ArrayBuffer): number
-function decodeOID(buffer: ArrayBuffer): string
+function decodeInteger(buffer: ArrayBuffer): number;
+function decodeOID(buffer: ArrayBuffer): string;
 
 // Binary decoding
-function decodeBitStringHex(buffer: ArrayBuffer): { unusedBits: number; hex: string }
+function decodeBitStringHex(buffer: ArrayBuffer): {
+  unusedBits: number;
+  hex: string;
+};
 
 // Buffer utilities
-function toHex(input: ArrayBuffer | Uint8Array): string
-function bufferToArrayBuffer(buf: Buffer): ArrayBuffer
+function toHex(input: ArrayBuffer | Uint8Array): string;
+function bufferToArrayBuffer(buf: Buffer): ArrayBuffer;
 ```
 
 ### Schema Pattern Examples
@@ -355,35 +383,41 @@ function bufferToArrayBuffer(buf: Buffer): ArrayBuffer
 
 ```typescript
 // Primitive field
-Schema.primitive("fieldName", { tagNumber: 4 }, decodeUtf8)
+Schema.primitive("fieldName", { tagNumber: 4 }, decodeUtf8);
 
 // Optional field
-Schema.primitive("optional", { tagNumber: 5, optional: true }, decodeUtf8)
+Schema.primitive("optional", { tagNumber: 5, optional: true }, decodeUtf8);
 
 // Context-specific tag [0], [1], etc.
-Schema.primitive("contextTag", {
-  tagClass: TagClass.ContextSpecific,
-  tagNumber: 0
-}, decodeInteger)
+Schema.primitive(
+  "contextTag",
+  {
+    tagClass: TagClass.ContextSpecific,
+    tagNumber: 0,
+  },
+  decodeInteger,
+);
 
 // SEQUENCE (ordered container)
 Schema.constructed("sequence", { tagNumber: 16 }, [
   Schema.primitive("field1", { tagNumber: 2 }, decodeInteger),
   Schema.primitive("field2", { tagNumber: 12 }, decodeUtf8),
-])
+]);
 
 // SET (unordered container)
 Schema.constructed("set", { tagNumber: 17, isSet: true }, [
   Schema.primitive("a", { tagNumber: 2 }, decodeInteger),
   Schema.primitive("b", { tagNumber: 12 }, decodeUtf8),
-])
+]);
 
 // SEQUENCE OF (repeated items)
 Schema.constructed("container", { tagNumber: 16 }, [
-  Schema.repeated("items", {},
-    Schema.primitive("item", { tagNumber: 4 }, decodeUtf8)
-  )
-])
+  Schema.repeated(
+    "items",
+    {},
+    Schema.primitive("item", { tagNumber: 4 }, decodeUtf8),
+  ),
+]);
 ```
 
 #### Nested Structures
@@ -396,11 +430,17 @@ const DocumentSchema = Schema.constructed("document", { tagNumber: 16 }, [
   ]),
   Schema.constructed("content", { tagNumber: 16 }, [
     Schema.primitive("title", { tagNumber: 12 }, decodeUtf8),
-    Schema.primitive("description", { tagNumber: 12, optional: true }, decodeUtf8),
-    Schema.repeated("tags", {},
-      Schema.primitive("tag", { tagNumber: 12 }, decodeUtf8)
+    Schema.primitive(
+      "description",
+      { tagNumber: 12, optional: true },
+      decodeUtf8,
     ),
-  ])
+    Schema.repeated(
+      "tags",
+      {},
+      Schema.primitive("tag", { tagNumber: 12 }, decodeUtf8),
+    ),
+  ]),
 ]);
 
 // TypeScript infers:
@@ -415,7 +455,7 @@ const DocumentSchema = Schema.constructed("document", { tagNumber: 16 }, [
 #### Strict Mode (Default)
 
 ```typescript
-new SchemaParser(schema, { strict: true });   // Default
+new SchemaParser(schema, { strict: true }); // Default
 new SchemaBuilder(schema, { strict: true });
 ```
 
@@ -498,7 +538,7 @@ npm run publish       # Publish to npm
 ```
 ├── src/
 │   ├── parser/          # TLV parsing functionality
-│   ├── builder/         # TLV building functionality  
+│   ├── builder/         # TLV building functionality
 │   ├── common/          # Shared types and utilities
 │   └── utils/           # Encoding/decoding utilities
 ├── examples/
@@ -515,7 +555,7 @@ The library includes various built-in codecs:
 - **Text**: UTF-8, ASCII, Shift-JIS
 - **Numbers**: INTEGER (DER encoding)
 - **Identifiers**: OBJECT IDENTIFIER
-- **Binary**: BIT STRING, OCTET STRING  
+- **Binary**: BIT STRING, OCTET STRING
 - **Utility**: Hex conversion, buffer operations
 
 ## TypeScript Support
