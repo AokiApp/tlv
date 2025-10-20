@@ -47,6 +47,20 @@ describe("BasicTLVParser: length and tag-number forms", () => {
   });
 });
 
+describe("BasicTLVParser: length validation", () => {
+  it("short-form length: throws when declared length exceeds available bytes", () => {
+    // Tag: Private primitive (0xC1), Length: 0x05, Value: only 2 bytes (AA BB)
+    const buf = fromHexString("c105aabb");
+    assert.throws(() => BasicTLVParser.parse(buf));
+  });
+
+  it("long-form length: throws when declared length exceeds available bytes", () => {
+    // Tag: Private primitive (0xC1), Length: long-form 0x81 0x82 (130), Value: only 1 byte (00)
+    const buf = fromHexString("c1818200");
+    assert.throws(() => BasicTLVParser.parse(buf));
+  });
+});
+
 describe("BasicTLVBuilder: validation and constraints", () => {
   it("throws when tagNumber is negative", () => {
     const badTLV = {
