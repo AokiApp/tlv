@@ -250,15 +250,10 @@ export class SchemaBuilder<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors used by the builder.
 export class Schema {
-  static primitive<
-    N extends string,
-    O extends SchemaOptions,
-    EncodedType = ArrayBuffer,
-  >(
+  static primitive<N extends string, O extends SchemaOptions, EncodedType>(
     name: N,
     options: O,
-    encode: (data: EncodedType) => ArrayBuffer = (data: EncodedType) =>
-      data as ArrayBuffer,
+    encode: (data: EncodedType) => ArrayBuffer,
   ): PrimitiveTLVSchema<N, EncodedType> & OptionalFlag<O> {
     const tagNumber = options.tagNumber;
     if (typeof tagNumber !== "number") {

@@ -2,6 +2,10 @@
  * Common encode/decode utilities for TLV ASN.1 DER operations
  */
 
+export function identity(ab: ArrayBuffer): ArrayBuffer {
+  return ab;
+}
+
 export function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
   const out = new ArrayBuffer(buf.byteLength);
   new Uint8Array(out).set(

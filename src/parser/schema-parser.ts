@@ -556,15 +556,10 @@ export class SchemaParser<S extends TLVSchema> {
  */
 // Convenience factory for constructing schema descriptors consumed by the parser.
 export class Schema {
-  static primitive<
-    N extends string,
-    O extends SchemaOptions,
-    DecodedType = ArrayBuffer,
-  >(
+  static primitive<N extends string, O extends SchemaOptions, DecodedType>(
     name: N,
     options: O,
-    decode: (buffer: ArrayBuffer) => DecodedType = (buffer: ArrayBuffer) =>
-      buffer as DecodedType,
+    decode: (buffer: ArrayBuffer) => DecodedType,
   ): PrimitiveTLVSchema<N, DecodedType> & OptionalFlag<O> {
     const tagNumber = options.tagNumber;
     if (typeof tagNumber !== "number") {
