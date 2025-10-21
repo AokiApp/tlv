@@ -27,6 +27,7 @@ import {
   decodeInteger,
   decodeOID,
   decodeBitStringHex,
+  identity,
 } from "../../src/common/codecs.ts";
 
 function decodeRegisteredCorporationInfoExtension(buffer: ArrayBuffer) {
@@ -75,7 +76,7 @@ const AlgorithmIdentifier = Schema.constructed(
   { tagNumber: 16 },
   [
     Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
-    Schema.primitive("parameters", { tagNumber: 5, optional: true }),
+    Schema.primitive("parameters", { tagNumber: 5, optional: true }, identity),
   ],
 );
 
@@ -187,7 +188,11 @@ const POPOSigningKey = Schema.constructed(
   [
     Schema.constructed("algorithmIdentifier", { tagNumber: 16 }, [
       Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
-      Schema.primitive("parameters", { tagNumber: 5, optional: true }),
+      Schema.primitive(
+        "parameters",
+        { tagNumber: 5, optional: true },
+        identity,
+      ),
     ]),
     Schema.primitive("signature", { tagNumber: 3 }, decodeBitStringHex),
   ],
@@ -202,7 +207,7 @@ const POPOSigningKey = Schema.constructed(
 const SuspensionSecretCode = Schema.constructed("value", { tagNumber: 16 }, [
   Schema.constructed("hashAlg", { tagNumber: 16, optional: true }, [
     Schema.primitive("algorithm", { tagNumber: 6 }, decodeOID),
-    Schema.primitive("parameters", { tagNumber: 5, optional: true }),
+    Schema.primitive("parameters", { tagNumber: 5, optional: true }, identity),
   ]),
   // Render hashedSecretCode as hex for readability
   Schema.primitive("hashedSecretCode", { tagNumber: 4 }, toHex),
