@@ -37,9 +37,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "prepack": "npm run build",
     "changelog": "changeset",
     "version": "changeset version",
-    "publish": "changeset publish"
+    "publish": "npm run build && changeset publish"
   },
   "keywords": [
     "tlv",
