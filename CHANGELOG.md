@@ -1,5 +1,11 @@
 # @aokiapp/tlv
 
+## 0.3.1
+
+### Patch Changes
+
+- 425c91a: fix path
+
 ## 0.3.0
 
 ### Minor Changes
