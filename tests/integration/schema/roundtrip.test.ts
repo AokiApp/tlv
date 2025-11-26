@@ -1,10 +1,10 @@
 // tests/integration/schema/roundtrip.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { Schema as BSchema, SchemaBuilder } from "../../../src/builder";
-import { Schema as PSchema, SchemaParser } from "../../../src/parser";
-import { TagClass } from "../../../src/common/types";
-import { toHex } from "../../../src/common/codecs";
+import { Schema as BSchema, SchemaBuilder } from "@aokiapp/tlv/builder";
+import { Schema as PSchema, SchemaParser } from "@aokiapp/tlv/parser";
+import { TagClass } from "@aokiapp/tlv/common";
+import { toHex } from "@aokiapp/tlv/common";
 import { fromHexString } from "../../helpers/utils";
 
 describe("Integration: constructed build→parse round-trip preserves data shape", () => {

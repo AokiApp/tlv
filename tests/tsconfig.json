@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@aokiapp/tlv": ["../src/index.ts"],
+      "@aokiapp/tlv/parser": ["../src/parser/index.ts"],
+      "@aokiapp/tlv/builder": ["../src/builder/index.ts"],
+      "@aokiapp/tlv/common": ["../src/common/index.ts"]
+    }
+  },
+  "include": ["**/*.ts"]
+}

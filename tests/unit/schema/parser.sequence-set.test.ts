@@ -5,8 +5,8 @@ import {
   Schema as PSchema,
   SchemaParser,
   BasicTLVParser,
-} from "../../../src/parser";
-import { TagClass } from "../../../src/common/types";
+} from "@aokiapp/tlv/parser";
+import { TagClass } from "@aokiapp/tlv/common";
 import { fromHexString } from "../../helpers/utils";
 
 describe("SchemaParser primitive: trailing bytes strict gating", () => {

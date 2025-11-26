@@ -1,4 +1,4 @@
-import { Schema, TagClass } from "../src/parser";
+import { Schema, TagClass } from "@aokiapp/tlv/parser";
 import { decodeOffsets, decodePublicKey, decodeText } from "./utils";
 
 export const schemaCertificate = Schema.constructed(
