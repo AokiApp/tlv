@@ -1,9 +1,9 @@
 // tests/unit/schema/parser.additional-coverage.test.ts
 import { describe, it, expect } from "vitest";
 import assert from "assert";
-import { Schema as PSchema, SchemaParser } from "../../../src/parser";
+import { Schema as PSchema, SchemaParser } from "@aokiapp/tlv/parser";
 import { fromHexString } from "../../helpers/utils";
-import { identity } from "../../../src/common";
+import { identity } from "@aokiapp/tlv/common";
 
 describe("SEQUENCE: tail optional skip when content ends", () => {
   it("skips trailing optional field at end-of-content", () => {

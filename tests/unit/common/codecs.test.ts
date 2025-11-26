@@ -15,7 +15,7 @@ import {
   decodeOID,
   decodeBitStringHex,
   encodeBitString,
-} from "../../../src/common/codecs";
+} from "@aokiapp/tlv/common";
 
 describe("codecs: buffer and hex helpers", () => {
   it("bufferToArrayBuffer converts Buffer to ArrayBuffer", () => {

@@ -5,9 +5,9 @@ import {
   Schema as BSchema,
   SchemaBuilder,
   BasicTLVBuilder,
-} from "../../../src/builder";
-import { TagClass } from "../../../src/common/types";
-import { identity, toHex } from "../../../src/common/codecs";
+} from "@aokiapp/tlv/builder";
+import { TagClass } from "@aokiapp/tlv/common";
+import { identity, toHex } from "@aokiapp/tlv/common";
 
 function toHexBuf(buf: ArrayBuffer): string {
   return toHex(new Uint8Array(buf));

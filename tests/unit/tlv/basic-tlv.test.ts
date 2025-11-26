@@ -1,10 +1,10 @@
 // tests/unit/tlv/basic-tlv.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { BasicTLVParser } from "../../../src/parser";
-import { TagClass } from "../../../src/common/types";
-import { BasicTLVBuilder } from "../../../src/builder";
-import { toHex } from "../../../src/common/codecs";
+import { BasicTLVParser } from "@aokiapp/tlv/parser";
+import { TagClass } from "@aokiapp/tlv/common";
+import { BasicTLVBuilder } from "@aokiapp/tlv/builder";
+import { toHex } from "@aokiapp/tlv/common";
 import { fromHexString } from "../../helpers/utils";
 
 describe("BasicTLVParser: length and tag-number forms", () => {

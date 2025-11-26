@@ -1,7 +1,7 @@
 // tests/unit/tlv/basic-tlv.length-exceed.test.ts
 import { describe, it } from "vitest";
 import assert from "assert";
-import { BasicTLVParser } from "../../../src/parser";
+import { BasicTLVParser } from "@aokiapp/tlv/parser";
 import { fromHexString } from "../../helpers/utils";
 
 describe("BasicTLVParser.readValue: declared length exceeds available bytes", () => {

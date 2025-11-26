@@ -17,7 +17,7 @@ type OptionalFlag<O extends SchemaOptions | undefined> = {
 /**
  * Base interface for a TLV schema object.
  */
-interface TLVSchemaBase<N extends string = string> {
+export interface TLVSchemaBase<N extends string = string> {
   readonly name: N;
   readonly tagClass: TagClass;
   readonly tagNumber: number;
@@ -31,7 +31,7 @@ interface TLVSchemaBase<N extends string = string> {
  * Interface for defining a primitive TLV schema.
  * @template DecodedType - The type after decoding.
  */
-interface PrimitiveTLVSchema<
+export interface PrimitiveTLVSchema<
   N extends string = string,
   DecodedType = DefaultDecodeType,
 > extends TLVSchemaBase<N> {
@@ -46,7 +46,7 @@ interface PrimitiveTLVSchema<
  * Interface for defining a constructed TLV schema.
  * @template F - The array of child field schemas.
  */
-interface ConstructedTLVSchema<
+export interface ConstructedTLVSchema<
   N extends string = string,
   F extends readonly TLVSchema[] = readonly TLVSchema[],
 > extends TLVSchemaBase<N> {
@@ -55,14 +55,14 @@ interface ConstructedTLVSchema<
 }
 
 // Describes a repeated TLV schema entry (e.g. SET/SEQUENCE OF).
-interface RepeatedTLVSchema<
+export interface RepeatedTLVSchema<
   N extends string = string,
   Item extends TLVSchema = TLVSchema,
 > extends TLVSchemaBase<N> {
   readonly item: Item;
 }
 
-type TLVSchema<N extends string = string, D = unknown> =
+export type TLVSchema<N extends string = string, D = unknown> =
   | PrimitiveTLVSchema<N, D>
   | ConstructedTLVSchema<N, readonly TLVSchema[]>
   | RepeatedTLVSchema<N, TLVSchema>;
