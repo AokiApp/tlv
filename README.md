@@ -13,8 +13,22 @@ Tag-Length-Value (TLV) parser and builder library with schema support. Provides 
 
 ## Installation
 
+### From npm
+
 ```bash
 npm install @aokiapp/tlv
+```
+
+### From GitHub Packages
+
+```bash
+npm install @aokiapp/tlv --registry=https://npm.pkg.github.com
+```
+
+Or configure your `.npmrc`:
+
+```
+@aokiapp:registry=https://npm.pkg.github.com
 ```
 
 ## Quick Start
@@ -527,11 +541,17 @@ npm run format        # Prettier
 
 ### Release
 
+This library is automatically published to both npm and GitHub Packages via GitHub Actions.
+
 ```bash
 npm run changelog     # Create changeset
 npm run version       # Update version
-npm run publish       # Publish to npm
+npm run publish       # Publish to npm (manual, or use GitHub Actions)
 ```
+
+When changes are pushed to the `main` branch with a changeset, the GitHub Actions workflow will:
+1. Create a release PR or publish to npm
+2. Automatically publish to GitHub Packages if npm publish succeeds
 
 ## Project Structure
 
