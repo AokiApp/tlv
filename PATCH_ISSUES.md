@@ -10,6 +10,7 @@
 ### 1. npm依存パッケージの脆弱性（高優先度）
 
 **検出内容**:
+
 ```
 npm audit report:
 
@@ -27,15 +28,18 @@ fix available via `npm audit fix`
 ```
 
 **影響範囲**:
+
 - `glob`: 開発依存パッケージ（rimrafを通じて間接的に使用）
 - `js-yaml`: 開発依存パッケージ（@changesets/parse、read-yaml-fileを通じて間接的に使用）
 
 **推奨対処**:
+
 - `npm audit fix`を実行して脆弱性を修正
 - これは開発環境のみに影響し、ライブラリの本体コードには影響しない
 - パッチバージョン更新の対象として適切
 
 **修正コマンド**:
+
 ```bash
 npm audit fix
 ```
@@ -46,16 +50,17 @@ npm audit fix
 
 以下のパッケージで新しいバージョンが利用可能:
 
-| パッケージ | 現在 | 最新 | 種類 |
-|-----------|------|------|------|
-| @changesets/cli | 2.29.7 | 2.29.8 | パッチ |
-| @eslint/js | 9.33.0 | 9.39.1 | マイナー |
-| eslint | 9.33.0 | 9.39.1 | マイナー |
-| prettier | 3.6.2 | 3.7.4 | マイナー |
-| typescript | 5.9.2 | 5.9.3 | パッチ |
+| パッケージ        | 現在   | 最新   | 種類     |
+| ----------------- | ------ | ------ | -------- |
+| @changesets/cli   | 2.29.7 | 2.29.8 | パッチ   |
+| @eslint/js        | 9.33.0 | 9.39.1 | マイナー |
+| eslint            | 9.33.0 | 9.39.1 | マイナー |
+| prettier          | 3.6.2  | 3.7.4  | マイナー |
+| typescript        | 5.9.2  | 5.9.3  | パッチ   |
 | typescript-eslint | 8.39.0 | 8.49.0 | マイナー |
 
 **推奨対処**:
+
 - パッチバージョンの更新（@changesets/cli、typescript）は安全に実施可能
 - 開発依存パッケージのため、ライブラリの動作に直接影響しない
 
@@ -64,12 +69,14 @@ npm audit fix
 ### 3. コード品質チェック結果
 
 **✅ 通過した検証**:
+
 - ESLint: エラーなし
 - TypeScript型チェック: エラーなし
 - テスト: 93個すべて通過（カバレッジ95.68%）
 - ビルド: 成功
 
 **コード品質指標**:
+
 ```
 Coverage Report:
 - Statements  : 95.68% (443/463)
@@ -120,11 +127,13 @@ Coverage Report:
 ### パッチバージョンアップのための推奨作業
 
 **優先度1（セキュリティ修正）**:
+
 ```bash
 npm audit fix
 ```
 
 **優先度2（開発依存パッケージのパッチ更新）**:
+
 ```bash
 npm update @changesets/cli typescript
 ```
@@ -132,6 +141,7 @@ npm update @changesets/cli typescript
 ### 変更後の確認
 
 パッチ適用後は以下を実行して問題がないことを確認:
+
 ```bash
 npm run typecheck
 npm run lint
@@ -145,7 +155,6 @@ npm run build
 
 1. **セキュリティ脆弱性の修正** - npm audit fix
    - glob（高）とjs-yaml（中）の脆弱性を解決
-   
 2. **依存パッケージのパッチ更新** - 任意だが推奨
    - @changesets/cli: 2.29.7 → 2.29.8
    - typescript: 5.9.2 → 5.9.3
