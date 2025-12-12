@@ -29,12 +29,7 @@ export default defineConfig({
       provider: "istanbul",
       reporter: ["text", "text-summary"],
       include: ["src/**/*.ts"],
-      exclude: [
-        "tests/**",
-        "examples/**",
-        ".changeset/**",
-        "**/*.d.ts",
-      ],
+      exclude: ["tests/**", "examples/**", ".changeset/**", "**/*.d.ts"],
     },
   },
 });
