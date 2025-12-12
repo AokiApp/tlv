@@ -557,10 +557,11 @@ This library is automatically published to both npm and GitHub Packages via GitH
 ```bash
 npm run changelog     # Create changeset
 npm run version       # Update version
-npm run publish       # Publish to npm (manual, or use GitHub Actions)
+npm run publish       # Publish manually (for testing, otherwise use GitHub Actions)
 ```
 
 When changes are pushed to the `main` branch with a changeset, the GitHub Actions workflow will:
+
 1. Create a release PR or publish to npm
 2. Automatically publish to GitHub Packages if npm publish succeeds
 
