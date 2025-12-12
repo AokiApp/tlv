@@ -24,32 +24,32 @@ When parsing base-128 encoded OID arcs, the accumulator `val` overflows for arc 
 ### Proof of Bug
 
 ```javascript
-import { encodeOID, decodeOID } from '@aokiapp/tlv/common';
+import { encodeOID, decodeOID } from "@aokiapp/tlv/common";
 
 // Test with OID containing 2^32
-const oid = '1.2.4294967295'; // 2^32 - 1
+const oid = "1.2.4294967295"; // 2^32 - 1
 const enc = encodeOID(oid);
 const dec = decodeOID(enc);
 
-console.log('Original:', oid);
-console.log('Decoded:', dec);
-console.log('Match:', oid === dec); // false!
+console.log("Original:", oid);
+console.log("Decoded:", dec);
+console.log("Match:", oid === dec); // false!
 // Decoded: "1.2.-1" (WRONG!)
 
 // Test with 2^32
-const oid2 = '1.2.4294967296';
+const oid2 = "1.2.4294967296";
 const enc2 = encodeOID(oid2);
 const dec2 = decodeOID(enc2);
-console.log('Decoded:', dec2); // "1.2.0" (WRONG!)
+console.log("Decoded:", dec2); // "1.2.0" (WRONG!)
 ```
 
 ### Test Results
 
-| OID Last Arc | Expected | Decoded | Status |
-|--------------|----------|---------|--------|
-| 0 - 2^31-1 | Correct | Correct | ✅ PASS |
-| 2^32-1 | 4294967295 | -1 | ❌ FAIL |
-| 2^32 | 4294967296 | 0 | ❌ FAIL |
+| OID Last Arc | Expected   | Decoded | Status  |
+| ------------ | ---------- | ------- | ------- |
+| 0 - 2^31-1   | Correct    | Correct | ✅ PASS |
+| 2^32-1       | 4294967295 | -1      | ❌ FAIL |
+| 2^32         | 4294967296 | 0       | ❌ FAIL |
 
 ## Impact Assessment
 
@@ -79,18 +79,20 @@ Replace bitwise left shift with multiplication:
 ### For `decodeOID()`
 
 **Current (BROKEN)**:
+
 ```typescript
 do {
   b = bytes[i++];
-  val = (val << 7) | (b & 0x7f);  // ❌ 32-bit limit
+  val = (val << 7) | (b & 0x7f); // ❌ 32-bit limit
 } while (b & 0x80);
 ```
 
 **Fixed**:
+
 ```typescript
 do {
   b = bytes[i++];
-  val = val * 128 + (b & 0x7f);  // ✅ Works for all safe integers
+  val = val * 128 + (b & 0x7f); // ✅ Works for all safe integers
 } while (b & 0x80);
 ```
 
@@ -100,7 +102,7 @@ The encoder already uses the correct approach:
 
 ```typescript
 // Line 76 in encodeBase128 (used by encodeOID)
-n = Math.floor(n / 128);  // ✅ Already correct!
+n = Math.floor(n / 128); // ✅ Already correct!
 ```
 
 This suggests awareness of the issue in the encoder, making the decoder bug an oversight.
