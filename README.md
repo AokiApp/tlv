@@ -21,6 +21,16 @@ npm install @aokiapp/tlv
 
 ### From GitHub Packages
 
+**Note**: GitHub Packages requires authentication even for public packages.
+
+First, authenticate with GitHub:
+
+```bash
+npm login --registry=https://npm.pkg.github.com
+```
+
+Then install:
+
 ```bash
 npm install @aokiapp/tlv --registry=https://npm.pkg.github.com
 ```
@@ -29,6 +39,7 @@ Or configure your `.npmrc`:
 
 ```
 @aokiapp:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
 ```
 
 ## Quick Start
