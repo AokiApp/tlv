@@ -169,7 +169,6 @@ describe("SET parsing: unknown child, canonical order, SET OF, duplicates", () =
   });
 });
 
-
 describe("SEQUENCE parsing: optional skip, repeated consumption, extra child errors", () => {
   it("skips optional when tag does not match and continues", () => {
     const sch = PSchema.constructed("seq1", { tagNumber: 16 }, [

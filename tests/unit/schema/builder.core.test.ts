@@ -159,7 +159,6 @@ describe("Builder SET OF emptiness", () => {
   });
 });
 
-
 describe("Builder raw encode paths (no encoder provided)", () => {
   it("accepts ArrayBuffer when no encoder is provided", () => {
     const rawSchema = BSchema.primitive(
