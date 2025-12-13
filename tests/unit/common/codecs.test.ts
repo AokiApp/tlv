@@ -163,16 +163,34 @@ describe("codecs: BIT STRING encode/decode", () => {
   it("encodeBitString and decodeBitStringHex with non-zero unused bits", () => {
     const encoded = encodeBitString({
       unusedBits: 3,
-      data: new Uint8Array([0xab, 0xcd]),
+      // Last 3 bits of the final byte are zero, which is DER-legal.
+      data: new Uint8Array([0xab, 0xc8]),
     });
     const info = decodeBitStringHex(encoded);
     assert.strictEqual(info.unusedBits, 3);
-    assert.strictEqual(info.hex, "abcd");
+    assert.strictEqual(info.hex, "abc8");
   });
 
   it("decodeBitStringHex handles empty buffer (unusedBits=0, hex='')", () => {
     const info = decodeBitStringHex(new ArrayBuffer(0));
     assert.strictEqual(info.unusedBits, 0);
     assert.strictEqual(info.hex, "");
+  });
+
+  it("rejects BIT STRING when unusedBits is outside 0..7", () => {
+    const encoded = encodeBitString({
+      unusedBits: 9,
+      data: new Uint8Array([0xff]),
+    });
+    assert.throws(() => decodeBitStringHex(encoded));
+  });
+
+  it("rejects BIT STRING when any unused bits in the last byte are not zero", () => {
+    const encoded = encodeBitString({
+      unusedBits: 3,
+      // Last 3 bits (unused area) are 1s here, which should be invalid in DER.
+      data: new Uint8Array([0xff, 0x07]),
+    });
+    assert.throws(() => decodeBitStringHex(encoded));
   });
 });

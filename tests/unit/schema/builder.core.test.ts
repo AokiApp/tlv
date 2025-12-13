@@ -133,6 +133,33 @@ describe("Builder SET ordering (strict gating)", () => {
   });
 });
 
+describe("Builder SET OF emptiness", () => {
+  it("encodes required SET OF empty array as empty SET TLV", () => {
+    const bSchema = BSchema.constructed(
+      "setOfItems",
+      { tagNumber: 17 }, // UNIVERSAL SET
+      [
+        BSchema.repeated(
+          "items",
+          {},
+          BSchema.primitive(
+            "n",
+            { tagNumber: 0x02 },
+            (n: number) => new Uint8Array([n]).buffer,
+          ),
+        ),
+      ],
+    );
+    const builder = new SchemaBuilder(bSchema);
+    const built = builder.build({ items: [] });
+
+    // Builder side accepts empty array and produces an empty SET (no children),
+    // which matches the parser-side behavior that treats it as { items: [] }.
+    assert.strictEqual(toHexBuf(built), "3100");
+  });
+});
+
+
 describe("Builder raw encode paths (no encoder provided)", () => {
   it("accepts ArrayBuffer when no encoder is provided", () => {
     const rawSchema = BSchema.primitive(

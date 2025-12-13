@@ -109,8 +109,16 @@ export class BasicTLVParser {
     if (first & 0x80) {
       const numBytes = first & 0x7f;
       length = 0;
+      const MAX_SAFE = Number.MAX_SAFE_INTEGER;
       for (let i = 0; i < numBytes; i++) {
-        length = (length << 8) | view.getUint8(offset++);
+        const byte = view.getUint8(offset++);
+        // Use safe arithmetic (no 32-bit bitwise truncation) and guard overflow.
+        if (length > Math.floor(MAX_SAFE / 256)) {
+          throw new Error(
+            `Long-form length exceeds JavaScript MAX_SAFE_INTEGER at offset ${offset - 1}`,
+          );
+        }
+        length = length * 256 + byte;
       }
     } else {
       length = first;

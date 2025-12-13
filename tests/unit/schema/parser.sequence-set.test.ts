@@ -141,7 +141,7 @@ describe("SET parsing: unknown child, canonical order, SET OF, duplicates", () =
     assert.throws(() => parser.parse(buf));
   });
 
-  it("throws when required repeated field (SET OF) is missing", () => {
+  it("accepts empty SET OF as empty array for required repeated field", () => {
     const sch = PSchema.constructed("setMissingRep", { tagNumber: 17 }, [
       PSchema.repeated(
         "items",
@@ -153,7 +153,8 @@ describe("SET parsing: unknown child, canonical order, SET OF, duplicates", () =
     ]);
     const parser = new SchemaParser(sch);
     const buf = fromHexString("3100");
-    assert.throws(() => parser.parse(buf));
+    const val = parser.parse(buf) as any;
+    assert.deepStrictEqual(val, { items: [] });
   });
 
   it("throws when required non-repeated field is missing", () => {
@@ -167,6 +168,7 @@ describe("SET parsing: unknown child, canonical order, SET OF, duplicates", () =
     assert.throws(() => parser.parse(buf));
   });
 });
+
 
 describe("SEQUENCE parsing: optional skip, repeated consumption, extra child errors", () => {
   it("skips optional when tag does not match and continues", () => {

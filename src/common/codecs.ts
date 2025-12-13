@@ -134,8 +134,40 @@ export function decodeBitStringHex(buffer: ArrayBuffer): {
   hex: string;
 } {
   const bytes = new Uint8Array(buffer);
-  const unusedBits = bytes.length > 0 ? bytes[0] : 0;
-  const content = bytes.length > 0 ? bytes.slice(1) : new Uint8Array();
+  if (bytes.length === 0) {
+    return { unusedBits: 0, hex: "" };
+  }
+
+  const unusedBits = bytes[0];
+
+  // DER: unusedBits must be in 0..7 (and fit in a single octet).
+  if (!Number.isInteger(unusedBits) || unusedBits < 0 || unusedBits > 7) {
+    throw new Error(
+      `BIT STRING unusedBits must be in range 0..7; got ${unusedBits}`,
+    );
+  }
+
+  const content = bytes.slice(1);
+
+  // A BIT STRING with non-zero unusedBits must have at least one content byte.
+  if (content.length === 0 && unusedBits !== 0) {
+    throw new Error(
+      `BIT STRING with unusedBits=${unusedBits} must have at least one content byte`,
+    );
+  }
+
+  if (content.length > 0 && unusedBits !== 0) {
+    const last = content[content.length - 1];
+    const mask = (1 << unusedBits) - 1;
+    if ((last & mask) !== 0) {
+      throw new Error(
+        `BIT STRING unused bits in last byte must be zero; got 0x${last
+          .toString(16)
+          .padStart(2, "0")} with unusedBits=${unusedBits}`,
+      );
+    }
+  }
+
   return { unusedBits, hex: toHex(content) };
 }
 

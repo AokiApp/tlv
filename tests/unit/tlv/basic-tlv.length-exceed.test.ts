@@ -17,3 +17,15 @@ describe("BasicTLVParser.readValue: declared length exceeds available bytes", ()
     assert.throws(() => BasicTLVParser.parse(buf));
   });
 });
+
+describe("BasicTLVParser.readLength: long-form length overflow / wraparound", () => {
+  const buf = fromHexString("0484ffffffff00");
+
+  it("rejects absurd long-form length that would previously wrap to -1", () => {
+    assert.throws(() => BasicTLVParser.parse(buf));
+  });
+
+  it("desired behavior: should reject TLV when computed length overflows and becomes negative", () => {
+    assert.throws(() => BasicTLVParser.parse(buf));
+  });
+});

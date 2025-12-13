@@ -371,7 +371,7 @@ export class SchemaParser<S extends TLVSchema> {
    * - Immediately fails on unknown children (independent of 'strict')
    * - Non-repeated fields: matches at most one child based on tagClass, tagNumber, constructed
    * - Repeated fields: collects all matching children (SET OF) in any order
-   * - Fails when a required field is missing or leftover children remain
+   * - Fails when a required non-repeated field is missing or leftover children remain
    */
   private parseConstructedSet(
     schema: ConstructedTLVSchema<string, readonly TLVSchema[]>,
@@ -438,12 +438,9 @@ export class SchemaParser<S extends TLVSchema> {
             consumed[i] = true;
           }
         }
-        // If repeated field is required but no items matched, fail
-        if (!field.optional && (out[field.name] as unknown[]).length === 0) {
-          throw new Error(
-            `Missing required property '${field.name}' in SET '${schema.name}'`,
-          );
-        }
+        // For SET OF, allow empty arrays even when the repeated field is not
+        // marked optional. This aligns SET behavior with SEQUENCE, where
+        // repeated fields are always present as arrays and may legitimately be empty.
         continue;
       }
 
