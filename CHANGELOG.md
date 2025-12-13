@@ -1,5 +1,14 @@
 # @aokiapp/tlv
 
+## 0.4.1
+
+### Patch Changes
+
+- Improve TLV safety and align SET OF behavior between builder and parser.
+  - Tighten BIT STRING validation: reject encodings where `unusedBits` is outside `0..7`, or where unused bits in the last byte are not zero.
+  - Make long-form length parsing use safe arithmetic and throw on overflow instead of wrapping, so absurd lengths are rejected instead of producing empty values.
+  - Treat empty `SET OF` as a valid empty array on the parser side, matching the builder which already encodes empty arrays as empty SETs (`3100`).
+
 ## 0.4.0
 
 ### Minor Changes
