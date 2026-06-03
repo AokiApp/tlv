@@ -1,4 +1,4 @@
-import { inferIsSetFromTag, TagClass } from "../common/index";
+import { inferIsSetFromTag, TagClass } from "../common/index.js";
 import { BasicTLVBuilder } from "./basic-builder.js";
 
 type DefaultEncodeType = ArrayBuffer;
